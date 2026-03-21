@@ -1,0 +1,12 @@
+services:
+  stock-dashboard:
+    image: ghcr.io/rvdbot/stock:latest
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - DATABASE_PATH=/app/data/stock-dashboard.db
+      - CRON_SECRET=changeme
+      - PORT=3100
+    restart: unless-stopped
