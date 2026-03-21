@@ -149,14 +149,14 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
     if (orderNowProducts.length > 0) {
       text += '\nBestel nu:\n'
       for (const p of orderNowProducts) {
-        text += `- ${p.sku} ${p.name} — voorraad: ${formatNumber(p.currentStock)}, verkoop: ${p.dailySales.toFixed(1)}/dag\n`
+        text += `- ${p.sku} ${p.name} — voorraad: ${formatNumber(p.currentStock)}, verkoop: ${p.dailySales.toLocaleString('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}/dag\n`
       }
     }
 
     if (soonProducts.length > 0) {
       text += '\nBinnenkort:\n'
       for (const p of soonProducts) {
-        text += `- ${p.sku} ${p.name} — voorraad: ${formatNumber(p.currentStock)}, verkoop: ${p.dailySales.toFixed(1)}/dag\n`
+        text += `- ${p.sku} ${p.name} — voorraad: ${formatNumber(p.currentStock)}, verkoop: ${p.dailySales.toLocaleString('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}/dag\n`
       }
     }
 
