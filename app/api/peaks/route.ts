@@ -21,22 +21,33 @@ export async function GET(req: NextRequest) {
 
   if (weeks.length === 0) return NextResponse.json({ peaks: {} })
 
-  const avgWeekly = weeks.reduce((s, w) => s + w.total_sales, 0) / weeks.length
+  // Group weeks by year and calculate per-year averages
+  const weeksByYear: Record<string, typeof weeks> = {}
+  for (const w of weeks) {
+    if (!weeksByYear[w.year]) weeksByYear[w.year] = []
+    weeksByYear[w.year].push(w)
+  }
 
-  // Find peaks (>2x average) grouped by year
+  // Find peaks (>1.8x the year's average) grouped by year
   const peaksByYear: Record<string, { weekStart: string; weekEnd: string; weekNum: number; totalSales: number; avgWeeklySales: number; ratio: number }[]> = {}
 
-  for (const w of weeks) {
-    if (w.total_sales > avgWeekly * 2) {
-      if (!peaksByYear[w.year]) peaksByYear[w.year] = []
-      peaksByYear[w.year].push({
-        weekStart: w.week_start,
-        weekEnd: w.week_end,
-        weekNum: parseInt(w.week_num),
-        totalSales: w.total_sales,
-        avgWeeklySales: Math.round(avgWeekly),
-        ratio: Math.round((w.total_sales / avgWeekly) * 10) / 10,
-      })
+  for (const [year, yearWeeks] of Object.entries(weeksByYear)) {
+    const yearAvg = yearWeeks.reduce((s, w) => s + w.total_sales, 0) / yearWeeks.length
+    if (yearAvg === 0) continue
+
+    for (const w of yearWeeks) {
+      const ratio = w.total_sales / yearAvg
+      if (ratio > 1.8) {
+        if (!peaksByYear[year]) peaksByYear[year] = []
+        peaksByYear[year].push({
+          weekStart: w.week_start,
+          weekEnd: w.week_end,
+          weekNum: parseInt(w.week_num),
+          totalSales: w.total_sales,
+          avgWeeklySales: Math.round(yearAvg),
+          ratio: Math.round(ratio * 10) / 10,
+        })
+      }
     }
   }
 
