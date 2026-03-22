@@ -8,6 +8,16 @@ interface WooProduct {
   stock_quantity: number | null
   price: string
   status: string
+  type?: string
+}
+
+interface WooVariation {
+  id: number
+  sku: string
+  stock_quantity: number | null
+  price: string
+  status: string
+  attributes: { name: string; option: string }[]
 }
 
 interface WooOrder {
@@ -64,8 +74,32 @@ async function wooFetch<T>(endpoint: string, params: Record<string, string> = {}
 export async function fetchAllProducts(): Promise<WooProduct[]> {
   log('info', 'WooCommerce: producten ophalen...')
   const products = await wooFetch<WooProduct>('products', { status: 'publish' })
-  log('info', `WooCommerce: ${products.length} producten opgehaald`)
-  return products
+  log('info', `WooCommerce: ${products.length} producten opgehaald (incl. variable)`)
+
+  // Fetch variations for variable products
+  const allProducts: WooProduct[] = []
+  for (const p of products) {
+    if (p.type === 'variable') {
+      const variations = await wooFetch<WooVariation>(`products/${p.id}/variations`)
+      for (const v of variations) {
+        if (!v.sku) continue
+        const attrStr = v.attributes.map(a => a.option).join(' / ')
+        allProducts.push({
+          id: v.id,
+          name: attrStr ? `${p.name} — ${attrStr}` : p.name,
+          sku: v.sku,
+          stock_quantity: v.stock_quantity,
+          price: v.price,
+          status: v.status,
+        })
+      }
+    } else {
+      allProducts.push(p)
+    }
+  }
+
+  log('info', `WooCommerce: ${allProducts.length} producten totaal (na variaties)`)
+  return allProducts
 }
 
 export async function fetchOrders(afterDate?: string): Promise<WooOrder[]> {
