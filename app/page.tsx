@@ -44,7 +44,7 @@ export default function AlertsPage() {
       fetch('/api/products').then(r => r.json()),
       fetch('/api/settings').then(r => r.json()),
     ]).then(([prodData, settData]) => {
-      setProducts(prodData.products || [])
+      setProducts(Array.isArray(prodData) ? prodData : prodData.products || [])
       const settings = settData.settings || {}
       setLastSyncAt(settings.last_sync_at || '')
       setLastSyncStatus(settings.last_sync_status || '')
