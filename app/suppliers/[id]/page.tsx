@@ -163,6 +163,16 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
     }
   }
 
+  async function handleDelete() {
+    if (!confirm('Weet je zeker dat je deze fabrikant wilt verwijderen? Producten worden losgekoppeld.')) return
+    await fetch('/api/suppliers', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: parseInt(id, 10) }),
+    })
+    window.location.href = '/suppliers'
+  }
+
   useEffect(() => { loadData() }, [])
 
   const summary = useMemo(() => ({
@@ -259,12 +269,20 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
               <a href="/suppliers" className="text-accent hover:text-accent-hover text-[12px] mb-2 inline-block">&larr; Fabrikanten</a>
               <div className="flex items-center justify-between">
                 <h1 className="text-[18px] font-semibold text-text-primary">{supplier.name}</h1>
-                <button
-                  onClick={() => setEditing(!editing)}
-                  className="text-[12px] font-medium px-3 py-1.5 rounded-lg bg-surface-2 border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-surface-3 transition-all duration-150"
-                >
-                  {editing ? 'Annuleren' : 'Bewerken'}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setEditing(!editing)}
+                    className="text-[12px] font-medium px-3 py-1.5 rounded-lg bg-surface-2 border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-surface-3 transition-all duration-150"
+                  >
+                    {editing ? 'Annuleren' : 'Bewerken'}
+                  </button>
+                  <button
+                    onClick={handleDelete}
+                    className="text-[12px] font-medium px-3 py-1.5 rounded-lg text-danger hover:bg-danger/10 transition-all duration-150"
+                  >
+                    Verwijderen
+                  </button>
+                </div>
               </div>
             </div>
 

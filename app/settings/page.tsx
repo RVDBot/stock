@@ -1,23 +1,7 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import Nav from '@/components/Nav'
-
-interface Supplier {
-  id: number
-  name: string
-  lead_time_days: number
-  contact_info: string | null
-  notes: string | null
-}
-
-interface ProductStatus {
-  productId: number
-  sku: string
-  name: string
-  supplierId: number | null
-  supplierName: string | null
-}
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
@@ -39,37 +23,13 @@ export default function SettingsPage() {
   const [stockSaving, setStockSaving] = useState(false)
   const [stockMsg, setStockMsg] = useState('')
 
-  // Suppliers
-  const [suppliers, setSuppliers] = useState<Supplier[]>([])
-  const [newSupplier, setNewSupplier] = useState({ name: '', lead_time_days: '', contact_info: '', notes: '' })
-  const [supplierSaving, setSupplierSaving] = useState(false)
-
   // Sync
   const [historicalSyncing, setHistoricalSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
 
-  // Products without supplier
-  const [unassignedProducts, setUnassignedProducts] = useState<ProductStatus[]>([])
-  const [selectedProducts, setSelectedProducts] = useState<Set<number>>(new Set())
-  const [bulkSupplierId, setBulkSupplierId] = useState<string>('')
-  const [bulkAssigning, setBulkAssigning] = useState(false)
-  const lastClickedIndex = useRef<number | null>(null)
-
-  // Ignored products
-  const [ignoredProducts, setIgnoredProducts] = useState<ProductStatus[]>([])
-  const [showIgnored, setShowIgnored] = useState(false)
-
-  // Search
-  const [productSearch, setProductSearch] = useState('')
-
   function loadData() {
     setLoading(true)
-    Promise.all([
-      fetch('/api/settings').then(r => r.json()),
-      fetch('/api/suppliers').then(r => r.json()),
-      fetch('/api/products').then(r => r.json()),
-      fetch('/api/products?inactive=1').then(r => r.json()),
-    ]).then(([settData, suppData, prodData, ignoredData]) => {
+    fetch('/api/settings').then(r => r.json()).then(settData => {
       const settings = settData.settings || {}
       setLastSyncAt(settings.last_sync_at || '')
       setLastSyncStatus(settings.last_sync_status || '')
@@ -78,12 +38,6 @@ export default function SettingsPage() {
       setHasWooSecret(settings.has_woo_consumer_secret === '1')
       setWarehouseInboundDays(settings.warehouse_inbound_days || '14')
       setSafetyMarginDays(settings.safety_margin_days || '7')
-
-      setSuppliers(suppData || [])
-
-      const products: ProductStatus[] = (prodData.products || prodData || [])
-      setUnassignedProducts(products.filter((p: ProductStatus) => p.supplierId === null))
-      setIgnoredProducts(Array.isArray(ignoredData) ? ignoredData : [])
     }).finally(() => setLoading(false))
   }
 
@@ -103,7 +57,6 @@ export default function SettingsPage() {
 
   useEffect(() => { loadData() }, [])
 
-  // WooCommerce save
   async function saveWooSettings() {
     setWooSaving(true)
     setWooMsg('')
@@ -129,7 +82,6 @@ export default function SettingsPage() {
     }
   }
 
-  // Stock settings save
   async function saveStockSettings() {
     setStockSaving(true)
     setStockMsg('')
@@ -146,7 +98,6 @@ export default function SettingsPage() {
     }
   }
 
-  // Test connection
   async function testConnection() {
     await saveWooSettings()
     setSyncing(true)
@@ -171,29 +122,6 @@ export default function SettingsPage() {
     }
   }
 
-  // Suppliers CRUD
-  async function addSupplier() {
-    if (!newSupplier.name || !newSupplier.lead_time_days) return
-    setSupplierSaving(true)
-    try {
-      await fetch('/api/suppliers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newSupplier.name,
-          lead_time_days: parseInt(newSupplier.lead_time_days),
-          contact_info: newSupplier.contact_info || null,
-          notes: newSupplier.notes || null,
-        }),
-      })
-      setNewSupplier({ name: '', lead_time_days: '', contact_info: '', notes: '' })
-      loadData()
-    } finally {
-      setSupplierSaving(false)
-    }
-  }
-
-  // Historical sync
   async function runHistoricalSync() {
     if (!confirm('Dit kan lang duren — 3 jaar aan orders worden geimporteerd. Doorgaan?')) return
     setHistoricalSyncing(true)
@@ -218,91 +146,10 @@ export default function SettingsPage() {
     }
   }
 
-  // Bulk assign supplier to products
-  async function bulkAssignSupplier() {
-    if (selectedProducts.size === 0 || !bulkSupplierId) return
-    setBulkAssigning(true)
-    try {
-      await fetch('/api/products', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: Array.from(selectedProducts), supplier_id: parseInt(bulkSupplierId) }),
-      })
-      setSelectedProducts(new Set())
-      setBulkSupplierId('')
-      loadData()
-    } finally {
-      setBulkAssigning(false)
-    }
-  }
-
-  function handleProductClick(e: React.MouseEvent, index: number) {
-    const id = filteredUnassigned[index].productId
-    const isShift = e.shiftKey
-
-    if (isShift && lastClickedIndex.current !== null) {
-      e.preventDefault()
-      const start = Math.min(lastClickedIndex.current, index)
-      const end = Math.max(lastClickedIndex.current, index)
-      const ids = new Set(selectedProducts)
-      for (let i = start; i <= end; i++) {
-        ids.add(filteredUnassigned[i].productId)
-      }
-      setSelectedProducts(ids)
-    } else {
-      const ids = new Set(selectedProducts)
-      if (ids.has(id)) ids.delete(id)
-      else ids.add(id)
-      setSelectedProducts(ids)
-    }
-    lastClickedIndex.current = index
-  }
-
-  const filteredUnassigned = unassignedProducts.filter(p => {
-    if (!productSearch) return true
-    const q = productSearch.toLowerCase()
-    return p.sku.toLowerCase().includes(q) || p.name.toLowerCase().includes(q)
-  })
-
-  function toggleAllProducts() {
-    if (selectedProducts.size === filteredUnassigned.length && filteredUnassigned.length > 0) {
-      setSelectedProducts(new Set())
-    } else {
-      setSelectedProducts(new Set(filteredUnassigned.map(p => p.productId)))
-    }
-  }
-
-  async function ignoreSelectedProducts() {
-    if (selectedProducts.size === 0) return
-    setBulkAssigning(true)
-    try {
-      await fetch('/api/products', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: Array.from(selectedProducts), active: 0 }),
-      })
-      setSelectedProducts(new Set())
-      lastClickedIndex.current = null
-      loadData()
-    } finally {
-      setBulkAssigning(false)
-    }
-  }
-
-  async function restoreProducts(ids: number[]) {
-    await fetch('/api/products', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids, active: 1 }),
-    })
-    loadData()
-  }
-
   const inputClass = 'w-full text-[13px] px-3 py-2 rounded-lg bg-surface-0 border border-border-subtle text-text-primary outline-none focus:border-accent transition-colors'
   const labelClass = 'text-[11px] text-text-tertiary font-semibold uppercase tracking-wider block mb-1'
   const primaryBtn = 'text-[12px] font-medium px-4 py-2 rounded-lg bg-accent text-white hover:bg-accent-hover disabled:opacity-40 transition-all duration-150'
   const secondaryBtn = 'text-[12px] font-medium px-3 py-1.5 rounded-lg bg-surface-2 border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-surface-3 transition-all duration-150'
-  const dangerBtn = 'text-[12px] font-medium text-danger hover:bg-danger/10 px-2 py-1 rounded-lg transition-all duration-150'
 
   return (
     <div className="min-h-screen">
@@ -311,7 +158,7 @@ export default function SettingsPage() {
       <main className="max-w-[1100px] mx-auto px-6 py-6">
         {loading ? (
           <div className="space-y-4">
-            {[...Array(4)].map((_, i) => (
+            {[...Array(3)].map((_, i) => (
               <div key={i} className="bg-surface-1 rounded-2xl border border-border-subtle p-5">
                 <div className="skeleton h-5 w-48 mb-3" />
                 <div className="skeleton h-9 w-full mb-2" />
@@ -321,7 +168,7 @@ export default function SettingsPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {/* 1. WooCommerce verbinding */}
+            {/* WooCommerce verbinding */}
             <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5">
               <h2 className="text-[14px] font-semibold text-text-primary mb-3">WooCommerce verbinding</h2>
               <div className="grid grid-cols-1 gap-3 mb-3">
@@ -372,80 +219,7 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* 2. Fabrikanten */}
-            <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5">
-              <h2 className="text-[14px] font-semibold text-text-primary mb-3">Fabrikanten</h2>
-
-              {/* Existing suppliers */}
-              {suppliers.length > 0 && (
-                <div className="space-y-2 mb-4">
-                  {suppliers.map(s => (
-                    <a
-                      key={s.id}
-                      href={`/suppliers/${s.id}`}
-                      className="flex items-center gap-2 p-2 rounded-lg bg-surface-0 border border-border-subtle hover:bg-surface-hover transition-colors"
-                    >
-                      <span className="text-text-primary text-[13px] font-medium flex-1">{s.name}</span>
-                      <span className="text-text-secondary text-[12px]">{s.lead_time_days} dagen</span>
-                      <span className="text-accent text-[12px]">&rarr;</span>
-                    </a>
-                  ))}
-                </div>
-              )}
-
-              {/* Add supplier form */}
-              <div className="p-3 rounded-lg bg-surface-0 border border-border-subtle">
-                <p className="text-[12px] text-text-tertiary font-medium mb-2">Fabrikant toevoegen</p>
-                <div className="grid grid-cols-4 gap-2 mb-2">
-                  <div>
-                    <label className={labelClass}>Naam</label>
-                    <input
-                      className={inputClass}
-                      value={newSupplier.name}
-                      onChange={e => setNewSupplier({ ...newSupplier, name: e.target.value })}
-                      placeholder="Naam"
-                    />
-                  </div>
-                  <div>
-                    <label className={labelClass}>Levertijd (dagen)</label>
-                    <input
-                      type="number"
-                      className={inputClass}
-                      value={newSupplier.lead_time_days}
-                      onChange={e => setNewSupplier({ ...newSupplier, lead_time_days: e.target.value })}
-                      placeholder="30"
-                    />
-                  </div>
-                  <div>
-                    <label className={labelClass}>Contact</label>
-                    <input
-                      className={inputClass}
-                      value={newSupplier.contact_info}
-                      onChange={e => setNewSupplier({ ...newSupplier, contact_info: e.target.value })}
-                      placeholder="E-mail of telefoon"
-                    />
-                  </div>
-                  <div>
-                    <label className={labelClass}>Notities</label>
-                    <input
-                      className={inputClass}
-                      value={newSupplier.notes}
-                      onChange={e => setNewSupplier({ ...newSupplier, notes: e.target.value })}
-                      placeholder="Optioneel"
-                    />
-                  </div>
-                </div>
-                <button
-                  className={primaryBtn}
-                  disabled={supplierSaving || !newSupplier.name || !newSupplier.lead_time_days}
-                  onClick={addSupplier}
-                >
-                  Toevoegen
-                </button>
-              </div>
-            </div>
-
-            {/* 3. Voorraad instellingen */}
+            {/* Voorraad instellingen */}
             <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5">
               <h2 className="text-[14px] font-semibold text-text-primary mb-3">Voorraad instellingen</h2>
               <div className="grid grid-cols-2 gap-3 mb-3">
@@ -476,7 +250,7 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* 4. Data */}
+            {/* Data */}
             <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5">
               <h2 className="text-[14px] font-semibold text-text-primary mb-3">Data</h2>
               <div className="mb-3">
@@ -509,142 +283,6 @@ export default function SettingsPage() {
                 Historische import kan lang duren — 3 jaar aan orders worden geimporteerd.
               </p>
             </div>
-
-            {/* 5. Product-fabrikant koppeling */}
-            {unassignedProducts.length > 0 && (
-              <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5">
-                <h2 className="text-[14px] font-semibold text-text-primary mb-3">
-                  Product-fabrikant koppeling
-                  <span className="text-text-tertiary font-normal ml-2">({unassignedProducts.length} zonder fabrikant)</span>
-                </h2>
-
-                {/* Bulk action bar */}
-                <div className="flex items-center gap-3 mb-3 p-3 rounded-xl bg-surface-0 border border-border-subtle">
-                  <span className="text-[12px] text-text-secondary">
-                    {selectedProducts.size > 0
-                      ? `${selectedProducts.size} geselecteerd`
-                      : 'Selecteer producten (shift+klik voor bereik)'}
-                  </span>
-                  <div className="flex-1" />
-                  <select
-                    className={`${inputClass} !w-48`}
-                    value={bulkSupplierId}
-                    onChange={e => setBulkSupplierId(e.target.value)}
-                  >
-                    <option value="">Kies fabrikant...</option>
-                    {suppliers.map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={bulkAssignSupplier}
-                    disabled={selectedProducts.size === 0 || !bulkSupplierId || bulkAssigning}
-                    className={primaryBtn}
-                  >
-                    {bulkAssigning ? 'Koppelen...' : 'Koppelen'}
-                  </button>
-                  <button
-                    onClick={ignoreSelectedProducts}
-                    disabled={selectedProducts.size === 0 || bulkAssigning}
-                    className={dangerBtn}
-                    title="Geselecteerde producten negeren (uitgefaseerd)"
-                  >
-                    Negeren
-                  </button>
-                </div>
-
-                {/* Search */}
-                <div className="mb-3">
-                  <input
-                    type="text"
-                    className={inputClass}
-                    value={productSearch}
-                    onChange={e => setProductSearch(e.target.value)}
-                    placeholder="Zoek op SKU of naam..."
-                  />
-                </div>
-
-                {/* Select all */}
-                <div className="flex items-center gap-2 mb-2 px-2">
-                  <input
-                    type="checkbox"
-                    checked={selectedProducts.size === filteredUnassigned.length && filteredUnassigned.length > 0}
-                    onChange={toggleAllProducts}
-                    className="w-3.5 h-3.5 accent-accent cursor-pointer"
-                  />
-                  <span className="text-[11px] text-text-tertiary font-semibold uppercase tracking-wider">
-                    Alles selecteren{productSearch && ` (${filteredUnassigned.length} resultaten)`}
-                  </span>
-                </div>
-
-                <div className="space-y-1">
-                  {filteredUnassigned.map((p, i) => (
-                    <div
-                      key={p.productId}
-                      className={`flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-colors select-none ${
-                        selectedProducts.has(p.productId)
-                          ? 'bg-accent-subtle border-accent/20'
-                          : 'bg-surface-0 border-border-subtle hover:bg-surface-hover'
-                      }`}
-                      onMouseDown={e => handleProductClick(e, i)}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedProducts.has(p.productId)}
-                        readOnly
-                        className="w-3.5 h-3.5 accent-accent cursor-pointer pointer-events-none"
-                      />
-                      <span className="text-text-tertiary font-mono text-[11px] w-20">{p.sku}</span>
-                      <span className="text-text-primary text-[13px] flex-1">{p.name}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {/* 6. Genegeerde producten */}
-            {ignoredProducts.length > 0 && (
-              <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-[14px] font-semibold text-text-primary">
-                    Genegeerde producten
-                    <span className="text-text-tertiary font-normal ml-2">({ignoredProducts.length})</span>
-                  </h2>
-                  <button
-                    onClick={() => setShowIgnored(!showIgnored)}
-                    className={secondaryBtn}
-                  >
-                    {showIgnored ? 'Verbergen' : 'Tonen'}
-                  </button>
-                </div>
-                {showIgnored && (
-                  <div className="space-y-1">
-                    {ignoredProducts.map(p => (
-                      <div
-                        key={p.productId}
-                        className="flex items-center gap-3 p-2 rounded-lg bg-surface-0 border border-border-subtle"
-                      >
-                        <span className="text-text-tertiary font-mono text-[11px] w-20">{p.sku}</span>
-                        <span className="text-text-tertiary text-[13px] flex-1 line-through">{p.name}</span>
-                        <button
-                          onClick={() => restoreProducts([p.productId])}
-                          className={secondaryBtn}
-                        >
-                          Herstellen
-                        </button>
-                      </div>
-                    ))}
-                    <div className="mt-2">
-                      <button
-                        onClick={() => restoreProducts(ignoredProducts.map(p => p.productId))}
-                        className={secondaryBtn}
-                      >
-                        Alles herstellen
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         )}
       </main>

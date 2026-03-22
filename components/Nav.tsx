@@ -11,6 +11,7 @@ interface NavProps {
 
 const NAV_ITEMS = [
   { href: '/', label: 'Alerts' },
+  { href: '/products', label: 'Producten' },
   { href: '/suppliers', label: 'Fabrikanten' },
   { href: '/events', label: 'Events' },
   { href: '/settings', label: 'Instellingen' },
