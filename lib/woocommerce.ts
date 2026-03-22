@@ -73,7 +73,7 @@ async function wooFetch<T>(endpoint: string, params: Record<string, string> = {}
 
 export async function fetchAllProducts(): Promise<WooProduct[]> {
   log('info', 'WooCommerce: producten ophalen...')
-  const products = await wooFetch<WooProduct>('products', { status: 'publish,private,draft' })
+  const products = await wooFetch<WooProduct>('products', { status: 'any' })
   log('info', `WooCommerce: ${products.length} producten opgehaald (incl. variable)`)
 
   // Fetch variations for variable products
