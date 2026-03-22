@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import Nav from '@/components/Nav'
 
 interface Supplier {
@@ -55,6 +55,11 @@ export default function SettingsPage() {
   const [selectedProducts, setSelectedProducts] = useState<Set<number>>(new Set())
   const [bulkSupplierId, setBulkSupplierId] = useState<string>('')
   const [bulkAssigning, setBulkAssigning] = useState(false)
+  const lastClickedIndex = useRef<number | null>(null)
+
+  // Ignored products
+  const [ignoredProducts, setIgnoredProducts] = useState<ProductStatus[]>([])
+  const [showIgnored, setShowIgnored] = useState(false)
 
   function loadData() {
     setLoading(true)
@@ -62,7 +67,8 @@ export default function SettingsPage() {
       fetch('/api/settings').then(r => r.json()),
       fetch('/api/suppliers').then(r => r.json()),
       fetch('/api/products').then(r => r.json()),
-    ]).then(([settData, suppData, prodData]) => {
+      fetch('/api/products?inactive=1').then(r => r.json()),
+    ]).then(([settData, suppData, prodData, ignoredData]) => {
       const settings = settData.settings || {}
       setLastSyncAt(settings.last_sync_at || '')
       setLastSyncStatus(settings.last_sync_status || '')
@@ -76,6 +82,7 @@ export default function SettingsPage() {
 
       const products: ProductStatus[] = (prodData.products || prodData || [])
       setUnassignedProducts(products.filter((p: ProductStatus) => p.supplierId === null))
+      setIgnoredProducts(Array.isArray(ignoredData) ? ignoredData : [])
     }).finally(() => setLoading(false))
   }
 
@@ -265,13 +272,25 @@ export default function SettingsPage() {
     }
   }
 
-  function toggleProduct(id: number) {
+  function toggleProduct(index: number, shiftKey: boolean) {
+    const id = unassignedProducts[index].productId
     setSelectedProducts(prev => {
       const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
+
+      if (shiftKey && lastClickedIndex.current !== null) {
+        const start = Math.min(lastClickedIndex.current, index)
+        const end = Math.max(lastClickedIndex.current, index)
+        for (let i = start; i <= end; i++) {
+          next.add(unassignedProducts[i].productId)
+        }
+      } else {
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
+      }
+
       return next
     })
+    lastClickedIndex.current = index
   }
 
   function toggleAllProducts() {
@@ -280,6 +299,32 @@ export default function SettingsPage() {
     } else {
       setSelectedProducts(new Set(unassignedProducts.map(p => p.productId)))
     }
+  }
+
+  async function ignoreSelectedProducts() {
+    if (selectedProducts.size === 0) return
+    setBulkAssigning(true)
+    try {
+      await fetch('/api/products', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedProducts), active: 0 }),
+      })
+      setSelectedProducts(new Set())
+      lastClickedIndex.current = null
+      loadData()
+    } finally {
+      setBulkAssigning(false)
+    }
+  }
+
+  async function restoreProducts(ids: number[]) {
+    await fetch('/api/products', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, active: 1 }),
+    })
+    loadData()
   }
 
   const inputClass = 'w-full text-[13px] px-3 py-2 rounded-lg bg-surface-0 border border-border-subtle text-text-primary outline-none focus:border-accent transition-colors'
@@ -528,12 +573,12 @@ export default function SettingsPage() {
                   <span className="text-text-tertiary font-normal ml-2">({unassignedProducts.length} zonder fabrikant)</span>
                 </h2>
 
-                {/* Bulk assign bar */}
+                {/* Bulk action bar */}
                 <div className="flex items-center gap-3 mb-3 p-3 rounded-xl bg-surface-0 border border-border-subtle">
                   <span className="text-[12px] text-text-secondary">
                     {selectedProducts.size > 0
                       ? `${selectedProducts.size} geselecteerd`
-                      : 'Selecteer producten'}
+                      : 'Selecteer producten (shift+klik voor bereik)'}
                   </span>
                   <div className="flex-1" />
                   <select
@@ -553,6 +598,14 @@ export default function SettingsPage() {
                   >
                     {bulkAssigning ? 'Koppelen...' : 'Koppelen'}
                   </button>
+                  <button
+                    onClick={ignoreSelectedProducts}
+                    disabled={selectedProducts.size === 0 || bulkAssigning}
+                    className={dangerBtn}
+                    title="Geselecteerde producten negeren (uitgefaseerd)"
+                  >
+                    Negeren
+                  </button>
                 </div>
 
                 {/* Select all */}
@@ -567,26 +620,74 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="space-y-1">
-                  {unassignedProducts.map(p => (
+                  {unassignedProducts.map((p, i) => (
                     <label
                       key={p.productId}
-                      className={`flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-colors ${
+                      className={`flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-colors select-none ${
                         selectedProducts.has(p.productId)
                           ? 'bg-accent-subtle border-accent/20'
                           : 'bg-surface-0 border-border-subtle hover:bg-surface-hover'
                       }`}
+                      onClick={e => {
+                        e.preventDefault()
+                        toggleProduct(i, e.shiftKey)
+                      }}
                     >
                       <input
                         type="checkbox"
                         checked={selectedProducts.has(p.productId)}
-                        onChange={() => toggleProduct(p.productId)}
-                        className="w-3.5 h-3.5 accent-accent cursor-pointer"
+                        readOnly
+                        className="w-3.5 h-3.5 accent-accent cursor-pointer pointer-events-none"
                       />
                       <span className="text-text-tertiary font-mono text-[11px] w-20">{p.sku}</span>
                       <span className="text-text-primary text-[13px] flex-1">{p.name}</span>
                     </label>
                   ))}
                 </div>
+              </div>
+            )}
+            {/* 6. Genegeerde producten */}
+            {ignoredProducts.length > 0 && (
+              <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-[14px] font-semibold text-text-primary">
+                    Genegeerde producten
+                    <span className="text-text-tertiary font-normal ml-2">({ignoredProducts.length})</span>
+                  </h2>
+                  <button
+                    onClick={() => setShowIgnored(!showIgnored)}
+                    className={secondaryBtn}
+                  >
+                    {showIgnored ? 'Verbergen' : 'Tonen'}
+                  </button>
+                </div>
+                {showIgnored && (
+                  <div className="space-y-1">
+                    {ignoredProducts.map(p => (
+                      <div
+                        key={p.productId}
+                        className="flex items-center gap-3 p-2 rounded-lg bg-surface-0 border border-border-subtle"
+                      >
+                        <span className="text-text-tertiary font-mono text-[11px] w-20">{p.sku}</span>
+                        <span className="text-text-tertiary text-[13px] flex-1 line-through">{p.name}</span>
+                        <button
+                          onClick={() => restoreProducts([p.productId])}
+                          className={secondaryBtn}
+                        >
+                          Herstellen
+                        </button>
+                      </div>
+                    ))}
+                    <div className="mt-2">
+                      <button
+                        onClick={() => restoreProducts(ignoredProducts.map(p => p.productId))}
+                        className={secondaryBtn}
+                      >
+                        Alles herstellen
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

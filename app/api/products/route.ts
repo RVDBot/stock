@@ -7,6 +7,14 @@ export async function GET(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
 
   const supplierId = req.nextUrl.searchParams.get('supplier_id')
+  const inactive = req.nextUrl.searchParams.get('inactive')
+
+  // Return inactive (ignored) products
+  if (inactive === '1') {
+    const db = getDb()
+    const products = db.prepare('SELECT id as productId, sku, name, supplier_id as supplierId FROM products WHERE active = 0 ORDER BY name').all()
+    return NextResponse.json(products)
+  }
 
   if (supplierId) {
     const statuses = getProductStatusesBySupplier(parseInt(supplierId, 10))
@@ -23,11 +31,23 @@ export async function PATCH(req: NextRequest) {
   const body = await req.json()
   const db = getDb()
 
-  // Bulk assign: { ids: [1, 2, 3], supplier_id: 5 }
+  // Bulk operations: { ids: [1, 2, 3], supplier_id?: 5, active?: 0 }
   if (Array.isArray(body.ids)) {
     if (body.ids.length === 0) {
       return NextResponse.json({ error: 'Geen producten geselecteerd' }, { status: 400 })
     }
+
+    // Bulk set active/inactive
+    if (body.active !== undefined) {
+      const stmt = db.prepare('UPDATE products SET active = ? WHERE id = ?')
+      const tx = db.transaction((ids: number[]) => {
+        for (const id of ids) stmt.run(body.active, id)
+      })
+      tx(body.ids)
+      return NextResponse.json({ success: true, updated: body.ids.length })
+    }
+
+    // Bulk assign supplier
     const stmt = db.prepare('UPDATE products SET supplier_id = ? WHERE id = ?')
     const tx = db.transaction((ids: number[]) => {
       for (const id of ids) stmt.run(body.supplier_id, id)
