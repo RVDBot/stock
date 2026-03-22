@@ -272,24 +272,26 @@ export default function SettingsPage() {
     }
   }
 
-  function toggleProduct(index: number, shiftKey: boolean) {
+  function handleProductClick(e: React.MouseEvent, index: number) {
     const id = unassignedProducts[index].productId
-    setSelectedProducts(prev => {
-      const next = new Set(prev)
+    const isShift = e.shiftKey
 
-      if (shiftKey && lastClickedIndex.current !== null) {
-        const start = Math.min(lastClickedIndex.current, index)
-        const end = Math.max(lastClickedIndex.current, index)
-        for (let i = start; i <= end; i++) {
-          next.add(unassignedProducts[i].productId)
-        }
-      } else {
-        if (next.has(id)) next.delete(id)
-        else next.add(id)
+    if (isShift && lastClickedIndex.current !== null) {
+      // Prevent text selection when shift-clicking
+      e.preventDefault()
+      const start = Math.min(lastClickedIndex.current, index)
+      const end = Math.max(lastClickedIndex.current, index)
+      const ids = new Set(selectedProducts)
+      for (let i = start; i <= end; i++) {
+        ids.add(unassignedProducts[i].productId)
       }
-
-      return next
-    })
+      setSelectedProducts(ids)
+    } else {
+      const ids = new Set(selectedProducts)
+      if (ids.has(id)) ids.delete(id)
+      else ids.add(id)
+      setSelectedProducts(ids)
+    }
     lastClickedIndex.current = index
   }
 
@@ -628,7 +630,7 @@ export default function SettingsPage() {
                           ? 'bg-accent-subtle border-accent/20'
                           : 'bg-surface-0 border-border-subtle hover:bg-surface-hover'
                       }`}
-                      onClick={e => toggleProduct(i, e.shiftKey)}
+                      onMouseDown={e => handleProductClick(e, i)}
                     >
                       <input
                         type="checkbox"
