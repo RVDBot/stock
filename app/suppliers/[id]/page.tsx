@@ -3,8 +3,23 @@
 import { useEffect, useState, useMemo, use } from 'react'
 import Nav from '@/components/Nav'
 
+interface Supplier {
+  id: number
+  name: string
+  lead_time_days: number
+  inspection: string
+  contact_name: string | null
+  contact_email: string | null
+  phone: string | null
+  preferred_contact: string
+  contact_info: string | null
+  notes: string | null
+  created_at: string
+}
+
 interface ProductStatus {
   productId: number
+  wooProductId: number
   sku: string
   name: string
   currentStock: number
@@ -19,15 +34,6 @@ interface ProductStatus {
   pendingOrderArrival: string | null
   dataWeeks: number
   price: number
-}
-
-interface Supplier {
-  id: number
-  name: string
-  lead_time_days: number
-  contact_info: string | null
-  notes: string | null
-  created_at: string
 }
 
 interface PurchaseOrder {
@@ -52,6 +58,17 @@ const STATUS_STYLES = {
   on_track: { bg: 'bg-success/10', text: 'text-success', border: 'border-success/20', label: 'Op schema' },
 }
 
+const INSPECTION_OPTIONS = [
+  { value: 'never', label: 'Nooit' },
+  { value: 'new_products', label: 'Alleen bij nieuwe producten' },
+  { value: 'always', label: 'Altijd' },
+]
+
+const PREFERRED_CONTACT_OPTIONS = [
+  { value: 'email', label: 'Email' },
+  { value: 'whatsapp', label: 'WhatsApp' },
+]
+
 export default function SupplierDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
 
@@ -62,6 +79,23 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   const [syncing, setSyncing] = useState(false)
   const [lastSyncAt, setLastSyncAt] = useState('')
   const [lastSyncStatus, setLastSyncStatus] = useState('')
+  const [wooUrl, setWooUrl] = useState('')
+
+  // Edit state
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState({
+    name: '',
+    lead_time_days: 0,
+    inspection: 'never',
+    contact_name: '',
+    contact_email: '',
+    phone: '',
+    preferred_contact: 'email',
+    notes: '',
+  })
+
+  // Order form state
   const [showOrderForm, setShowOrderForm] = useState(false)
   const [orderProductId, setOrderProductId] = useState<number | ''>('')
   const [orderQty, setOrderQty] = useState('')
@@ -72,18 +106,31 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   function loadData() {
     setLoading(true)
     Promise.all([
-      fetch('/api/suppliers').then(r => r.json()),
+      fetch(`/api/suppliers?id=${id}`).then(r => r.json()),
       fetch(`/api/products?supplier_id=${id}`).then(r => r.json()),
       fetch(`/api/purchase-orders?supplier_id=${id}`).then(r => r.json()),
       fetch('/api/settings').then(r => r.json()),
-    ]).then(([suppliersData, productsData, ordersData, settData]) => {
-      const allSuppliers: Supplier[] = Array.isArray(suppliersData) ? suppliersData : []
-      setSupplier(allSuppliers.find(s => s.id === parseInt(id, 10)) || null)
+    ]).then(([supplierData, productsData, ordersData, settData]) => {
+      const sup = supplierData.error ? null : supplierData as Supplier
+      setSupplier(sup)
+      if (sup) {
+        setForm({
+          name: sup.name,
+          lead_time_days: sup.lead_time_days,
+          inspection: sup.inspection || 'never',
+          contact_name: sup.contact_name || '',
+          contact_email: sup.contact_email || '',
+          phone: sup.phone || '',
+          preferred_contact: sup.preferred_contact || 'email',
+          notes: sup.notes || '',
+        })
+      }
       setProducts(Array.isArray(productsData) ? productsData : [])
       setOrders(Array.isArray(ordersData) ? ordersData : [])
       const settings = settData.settings || {}
       setLastSyncAt(settings.last_sync_at || '')
       setLastSyncStatus(settings.last_sync_status || '')
+      setWooUrl(settings.woo_url || '')
     }).finally(() => setLoading(false))
   }
 
@@ -98,6 +145,21 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
       loadData()
     } finally {
       setSyncing(false)
+    }
+  }
+
+  async function handleSave() {
+    setSaving(true)
+    try {
+      await fetch('/api/suppliers', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: parseInt(id, 10), ...form }),
+      })
+      setEditing(false)
+      loadData()
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -166,6 +228,8 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
     })
   }
 
+  const adminBase = wooUrl ? `${wooUrl.replace(/\/$/, '')}/wp-admin/post.php` : ''
+
   return (
     <div className="min-h-screen">
       <Nav lastSyncAt={lastSyncAt} lastSyncStatus={lastSyncStatus} onSync={handleSync} syncing={syncing} />
@@ -182,11 +246,6 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                 <div className="skeleton h-10 w-20" />
               </div>
             </div>
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="bg-surface-1 rounded-2xl border border-border-subtle p-4">
-                <div className="flex justify-between"><div className="skeleton h-5 w-60" /><div className="skeleton h-6 w-20" /></div>
-              </div>
-            ))}
           </div>
         ) : !supplier ? (
           <div className="bg-surface-1 rounded-2xl border border-border-subtle p-16 text-center">
@@ -198,13 +257,161 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
             {/* Header */}
             <div className="mb-4">
               <a href="/suppliers" className="text-accent hover:text-accent-hover text-[12px] mb-2 inline-block">&larr; Fabrikanten</a>
-              <h1 className="text-[18px] font-semibold text-text-primary">{supplier.name}</h1>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-text-secondary mt-1">
-                <span>Levertijd: <strong>{supplier.lead_time_days} dagen</strong></span>
-                {supplier.contact_info && <span>Contact: {supplier.contact_info}</span>}
-                {supplier.notes && <span className="text-text-tertiary">{supplier.notes}</span>}
+              <div className="flex items-center justify-between">
+                <h1 className="text-[18px] font-semibold text-text-primary">{supplier.name}</h1>
+                <button
+                  onClick={() => setEditing(!editing)}
+                  className="text-[12px] font-medium px-3 py-1.5 rounded-lg bg-surface-2 border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-surface-3 transition-all duration-150"
+                >
+                  {editing ? 'Annuleren' : 'Bewerken'}
+                </button>
               </div>
             </div>
+
+            {/* Edit / View mode */}
+            {editing ? (
+              <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5 mb-4 animate-row">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Left column */}
+                  <div className="space-y-3">
+                    <h3 className="text-[13px] font-semibold text-text-primary">Bedrijfsgegevens</h3>
+                    <div>
+                      <label className="text-[11px] text-text-tertiary font-semibold uppercase tracking-wider block mb-1">Bedrijfsnaam</label>
+                      <input
+                        type="text"
+                        value={form.name}
+                        onChange={e => setForm({ ...form, name: e.target.value })}
+                        className="w-full text-[13px] px-3 py-2 rounded-lg bg-surface-0 border border-border-subtle text-text-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-text-tertiary font-semibold uppercase tracking-wider block mb-1">Levertijd (dagen)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={form.lead_time_days}
+                        onChange={e => setForm({ ...form, lead_time_days: parseInt(e.target.value, 10) || 0 })}
+                        className="w-full text-[13px] px-3 py-2 rounded-lg bg-surface-0 border border-border-subtle text-text-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-text-tertiary font-semibold uppercase tracking-wider block mb-1">Inspectie</label>
+                      <select
+                        value={form.inspection}
+                        onChange={e => setForm({ ...form, inspection: e.target.value })}
+                        className="w-full text-[13px] px-3 py-2 rounded-lg bg-surface-0 border border-border-subtle text-text-primary"
+                      >
+                        {INSPECTION_OPTIONS.map(o => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Right column */}
+                  <div className="space-y-3">
+                    <h3 className="text-[13px] font-semibold text-text-primary">Contactgegevens</h3>
+                    <div>
+                      <label className="text-[11px] text-text-tertiary font-semibold uppercase tracking-wider block mb-1">Naam</label>
+                      <input
+                        type="text"
+                        value={form.contact_name}
+                        onChange={e => setForm({ ...form, contact_name: e.target.value })}
+                        className="w-full text-[13px] px-3 py-2 rounded-lg bg-surface-0 border border-border-subtle text-text-primary"
+                        placeholder="Contactpersoon"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-text-tertiary font-semibold uppercase tracking-wider block mb-1">Email</label>
+                      <input
+                        type="email"
+                        value={form.contact_email}
+                        onChange={e => setForm({ ...form, contact_email: e.target.value })}
+                        className="w-full text-[13px] px-3 py-2 rounded-lg bg-surface-0 border border-border-subtle text-text-primary"
+                        placeholder="email@fabrikant.com"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-text-tertiary font-semibold uppercase tracking-wider block mb-1">Telefoonnummer</label>
+                      <input
+                        type="tel"
+                        value={form.phone}
+                        onChange={e => setForm({ ...form, phone: e.target.value })}
+                        className="w-full text-[13px] px-3 py-2 rounded-lg bg-surface-0 border border-border-subtle text-text-primary"
+                        placeholder="+31 6 12345678"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-text-tertiary font-semibold uppercase tracking-wider block mb-1">Geprefereerd contact</label>
+                      <select
+                        value={form.preferred_contact}
+                        onChange={e => setForm({ ...form, preferred_contact: e.target.value })}
+                        className="w-full text-[13px] px-3 py-2 rounded-lg bg-surface-0 border border-border-subtle text-text-primary"
+                      >
+                        {PREFERRED_CONTACT_OPTIONS.map(o => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <label className="text-[11px] text-text-tertiary font-semibold uppercase tracking-wider block mb-1">Notities</label>
+                  <textarea
+                    value={form.notes}
+                    onChange={e => setForm({ ...form, notes: e.target.value })}
+                    rows={2}
+                    className="w-full text-[13px] px-3 py-2 rounded-lg bg-surface-0 border border-border-subtle text-text-primary resize-none"
+                    placeholder="Opmerkingen over deze fabrikant..."
+                  />
+                </div>
+
+                <div className="mt-4 flex justify-end">
+                  <button
+                    onClick={handleSave}
+                    disabled={saving || !form.name}
+                    className="text-[12px] font-medium px-4 py-2 rounded-lg bg-accent text-white hover:bg-accent-hover disabled:opacity-40 transition-all duration-150"
+                  >
+                    {saving ? 'Opslaan...' : 'Opslaan'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5 mb-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  {/* Left: business info */}
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-text-secondary">
+                      <span>Levertijd: <strong>{supplier.lead_time_days} dagen</strong></span>
+                      <span>Inspectie: <strong>{INSPECTION_OPTIONS.find(o => o.value === supplier.inspection)?.label || 'Nooit'}</strong></span>
+                    </div>
+                    {supplier.notes && (
+                      <p className="text-[12px] text-text-tertiary">{supplier.notes}</p>
+                    )}
+                  </div>
+
+                  {/* Right: contact info */}
+                  <div className="space-y-1 text-[12px] text-text-secondary">
+                    {supplier.contact_name && (
+                      <p><span className="text-text-tertiary">Naam:</span> {supplier.contact_name}</p>
+                    )}
+                    {supplier.contact_email && (
+                      <p><span className="text-text-tertiary">Email:</span> <a href={`mailto:${supplier.contact_email}`} className="text-accent hover:text-accent-hover">{supplier.contact_email}</a></p>
+                    )}
+                    {supplier.phone && (
+                      <p><span className="text-text-tertiary">Tel:</span> <a href={`tel:${supplier.phone}`} className="text-accent hover:text-accent-hover">{supplier.phone}</a></p>
+                    )}
+                    {(supplier.contact_name || supplier.contact_email || supplier.phone) && (
+                      <p><span className="text-text-tertiary">Voorkeur:</span> <strong>{PREFERRED_CONTACT_OPTIONS.find(o => o.value === supplier.preferred_contact)?.label || 'Email'}</strong></p>
+                    )}
+                    {!supplier.contact_name && !supplier.contact_email && !supplier.phone && (
+                      <p className="text-text-tertiary">Geen contactgegevens ingevuld</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Summary bar */}
             <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5 mb-4">
@@ -303,72 +510,131 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
               </div>
             )}
 
-            {/* Product table */}
-            {products.length === 0 ? (
-              <div className="bg-surface-1 rounded-2xl border border-border-subtle p-16 text-center">
-                <p className="text-text-primary text-[14px] font-semibold mb-1">Geen producten</p>
-                <p className="text-text-tertiary text-[13px]">Er zijn geen producten gekoppeld aan deze fabrikant.</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {products.map((p, i) => {
-                  const style = STATUS_STYLES[p.status]
-                  const productOrders = getOrdersForProduct(p.productId)
-                  return (
-                    <div
-                      key={p.productId}
-                      className="bg-surface-1 rounded-2xl border border-border-subtle p-4 animate-row"
-                      style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-lg border ${style.bg} ${style.text} ${style.border}`}>
-                              {style.label}
-                            </span>
-                            <span className="text-text-primary text-[14px] font-semibold">{p.name}</span>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-text-secondary ml-8">
-                            <span className="text-text-tertiary font-mono text-[11px]">{p.sku}</span>
-                            <span>Voorraad: <strong>{formatNumber(p.currentStock)}</strong></span>
-                            <span>Verkoop: <strong>{p.dailySales.toFixed(1)}/dag</strong></span>
-                            <span>Leeg over: <strong>{p.daysUntilEmpty} dagen</strong></span>
-                          </div>
-                          {p.pendingOrderQty > 0 && (
-                            <p className="text-[11px] text-success mt-1 ml-8">
-                              {formatNumber(p.pendingOrderQty)} besteld
-                              {p.pendingOrderArrival && `, verwacht ${new Date(p.pendingOrderArrival).toLocaleDateString('nl-NL')}`}
-                            </p>
-                          )}
-                          {productOrders.length > 0 && (
-                            <div className="mt-1 ml-8 space-y-0.5">
-                              {productOrders.map(o => (
-                                <p key={o.id} className="text-[11px] text-text-tertiary">
-                                  Bestelling #{o.id}: {formatNumber(o.quantity)} stuks
-                                  {o.expected_arrival && ` — verwacht ${new Date(o.expected_arrival).toLocaleDateString('nl-NL')}`}
-                                  <span className={`ml-1 ${o.status === 'pending' ? 'text-warning' : o.status === 'ordered' ? 'text-accent' : 'text-text-tertiary'}`}>
-                                    ({o.status})
-                                  </span>
-                                </p>
-                              ))}
+            {/* Product overview */}
+            <div className="mb-4">
+              <h2 className="text-[14px] font-semibold text-text-primary mb-2">Producten ({products.length})</h2>
+              {products.length === 0 ? (
+                <div className="bg-surface-1 rounded-2xl border border-border-subtle p-12 text-center">
+                  <p className="text-text-tertiary text-[13px]">Geen producten gekoppeld aan deze fabrikant.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {products.map((p, i) => {
+                    const style = STATUS_STYLES[p.status]
+                    const productOrders = getOrdersForProduct(p.productId)
+                    return (
+                      <div
+                        key={p.productId}
+                        className="bg-surface-1 rounded-2xl border border-border-subtle p-4 animate-row"
+                        style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-lg border ${style.bg} ${style.text} ${style.border}`}>
+                                {style.label}
+                              </span>
+                              <span className="text-text-primary text-[14px] font-semibold">{p.name}</span>
                             </div>
-                          )}
-                          {p.dataWeeks < 12 && (
-                            <p className="text-[11px] text-warning mt-1 ml-8">
-                              Beperkte verkoopdata ({p.dataWeeks} weken)
-                            </p>
-                          )}
-                        </div>
-                        <div className="shrink-0 text-right">
-                          <p className="text-[16px] font-bold text-text-primary tabular-nums">{p.daysUntilEmpty}d</p>
-                          <p className="text-text-tertiary text-[11px]">tot leeg</p>
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-text-secondary ml-8">
+                              <span className="text-text-tertiary font-mono text-[11px]">{p.sku}</span>
+                              <span>Voorraad: <strong>{formatNumber(p.currentStock)}</strong></span>
+                              <span>Verkoop: <strong>{p.dailySales.toLocaleString('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}/dag</strong></span>
+                              <span>Leeg over: <strong>{p.daysUntilEmpty} dagen</strong></span>
+                              {adminBase && (
+                                <a
+                                  href={`${adminBase}?post=${p.wooProductId}&action=edit`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-accent hover:text-accent-hover"
+                                >
+                                  WooCommerce
+                                </a>
+                              )}
+                            </div>
+                            {p.pendingOrderQty > 0 && (
+                              <p className="text-[11px] text-success mt-1 ml-8">
+                                {formatNumber(p.pendingOrderQty)} besteld
+                                {p.pendingOrderArrival && `, verwacht ${new Date(p.pendingOrderArrival).toLocaleDateString('nl-NL')}`}
+                              </p>
+                            )}
+                            {productOrders.length > 0 && (
+                              <div className="mt-1 ml-8 space-y-0.5">
+                                {productOrders.map(o => (
+                                  <p key={o.id} className="text-[11px] text-text-tertiary">
+                                    Bestelling #{o.id}: {formatNumber(o.quantity)} stuks
+                                    {o.expected_arrival && ` — verwacht ${new Date(o.expected_arrival).toLocaleDateString('nl-NL')}`}
+                                    <span className={`ml-1 ${o.status === 'pending' ? 'text-warning' : o.status === 'ordered' ? 'text-accent' : 'text-text-tertiary'}`}>
+                                      ({o.status})
+                                    </span>
+                                  </p>
+                                ))}
+                              </div>
+                            )}
+                            {p.dataWeeks < 12 && (
+                              <p className="text-[11px] text-warning mt-1 ml-8">
+                                Beperkte verkoopdata ({p.dataWeeks} weken)
+                              </p>
+                            )}
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <p className="text-[16px] font-bold text-text-primary tabular-nums">{p.daysUntilEmpty}d</p>
+                            <p className="text-text-tertiary text-[11px]">tot leeg</p>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Orders overview */}
+            <div>
+              <h2 className="text-[14px] font-semibold text-text-primary mb-2">Bestellingen ({orders.length})</h2>
+              {orders.length === 0 ? (
+                <div className="bg-surface-1 rounded-2xl border border-border-subtle p-12 text-center">
+                  <p className="text-text-tertiary text-[13px]">Nog geen bestellingen geregistreerd.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {orders.map((o, i) => {
+                    const product = products.find(p => p.productId === o.product_id)
+                    const statusColor = o.status === 'ordered' ? 'text-accent' : o.status === 'shipped' ? 'text-warning' : o.status === 'received' ? 'text-success' : 'text-text-tertiary'
+                    return (
+                      <div
+                        key={o.id}
+                        className="bg-surface-1 rounded-2xl border border-border-subtle p-4 animate-row"
+                        style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-0.5">
+                              <span className="text-text-primary text-[13px] font-semibold">
+                                #{o.id} — {product?.name || `Product #${o.product_id}`}
+                              </span>
+                              <span className={`text-[11px] font-semibold ${statusColor}`}>
+                                {o.status}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-text-secondary">
+                              <span>{formatNumber(o.quantity)} stuks</span>
+                              <span>Besteld: {new Date(o.order_date).toLocaleDateString('nl-NL')}</span>
+                              {o.expected_arrival && (
+                                <span>Verwacht: {new Date(o.expected_arrival).toLocaleDateString('nl-NL')}</span>
+                              )}
+                              {o.notes && (
+                                <span className="text-text-tertiary">{o.notes}</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           </>
         )}
       </main>

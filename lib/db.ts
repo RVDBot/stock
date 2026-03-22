@@ -30,12 +30,17 @@ function initSchema(db: Database.Database) {
     );
 
     CREATE TABLE IF NOT EXISTS suppliers (
-      id             INTEGER PRIMARY KEY AUTOINCREMENT,
-      name           TEXT NOT NULL,
-      lead_time_days INTEGER NOT NULL,
-      contact_info   TEXT,
-      notes          TEXT,
-      created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      name              TEXT NOT NULL,
+      lead_time_days    INTEGER NOT NULL,
+      inspection        TEXT NOT NULL DEFAULT 'never',
+      contact_name      TEXT,
+      contact_email     TEXT,
+      phone             TEXT,
+      preferred_contact TEXT NOT NULL DEFAULT 'email',
+      contact_info      TEXT,
+      notes             TEXT,
+      created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS products (
@@ -99,4 +104,24 @@ function initSchema(db: Database.Database) {
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `)
+
+  // Migrations for existing databases
+  const cols = db.prepare("PRAGMA table_info(suppliers)").all() as { name: string }[]
+  const colNames = new Set(cols.map(c => c.name))
+  if (!colNames.has('inspection')) {
+    db.exec(`
+      ALTER TABLE suppliers ADD COLUMN inspection TEXT NOT NULL DEFAULT 'never';
+      ALTER TABLE suppliers ADD COLUMN contact_name TEXT;
+      ALTER TABLE suppliers ADD COLUMN contact_email TEXT;
+      ALTER TABLE suppliers ADD COLUMN phone TEXT;
+      ALTER TABLE suppliers ADD COLUMN preferred_contact TEXT NOT NULL DEFAULT 'email';
+    `)
+    // Migrate old contact_info to contact_email if it looks like an email
+    const suppliers = db.prepare('SELECT id, contact_info FROM suppliers WHERE contact_info IS NOT NULL').all() as { id: number; contact_info: string }[]
+    for (const s of suppliers) {
+      if (s.contact_info.includes('@')) {
+        db.prepare('UPDATE suppliers SET contact_email = ? WHERE id = ?').run(s.contact_info, s.id)
+      }
+    }
+  }
 }
