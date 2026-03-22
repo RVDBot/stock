@@ -30,12 +30,35 @@ export async function syncProducts() {
     ON CONFLICT(product_id, date) DO UPDATE SET stock_level = ?
   `)
 
+  // Deduplicate SKUs: if a SKU appears in multiple products (e.g. standalone + as part of
+  // a composite/variable), prefer the one that manages its own stock. If multiple manage
+  // stock, take the highest value.
+  const skuMap = new Map<string, typeof products[0]>()
+  for (const p of products) {
+    if (!p.sku) continue
+    if (p.sku.includes('+')) continue
+
+    const existing = skuMap.get(p.sku)
+    if (!existing) {
+      skuMap.set(p.sku, p)
+    } else {
+      const existingManages = existing.manage_stock
+      const newManages = p.manage_stock
+      // Prefer the product that manages its own stock
+      if (newManages && !existingManages) {
+        skuMap.set(p.sku, p)
+      } else if (newManages === existingManages) {
+        // Both manage or both don't: take the higher stock
+        if ((p.stock_quantity ?? 0) > (existing.stock_quantity ?? 0)) {
+          skuMap.set(p.sku, p)
+        }
+      }
+    }
+  }
+
   let synced = 0
   db.transaction(() => {
-    for (const p of products) {
-      if (!p.sku) continue
-      if (p.sku.includes('+')) continue
-
+    for (const p of skuMap.values()) {
       const stock = p.stock_quantity ?? 0
       const price = parseFloat(p.price) || 0
       upsertProduct.run(p.id, p.sku, p.name, stock, price, p.id, p.name, stock, price)
@@ -167,14 +190,15 @@ export function analyzeHistoricalPeaks(): PeakWeek[] {
     .sort((a, b) => b.ratio - a.ratio)
 }
 
-export async function runDailySync() {
+export async function runDailySync(type: 'manual' | 'automated' = 'manual') {
   try {
     setSetting('last_sync_status', 'running')
+    setSetting('last_sync_type', type)
     await syncProducts()
     await syncRecentOrders()
     setSetting('last_sync_at', new Date().toISOString())
     setSetting('last_sync_status', 'success')
-    log('info', 'Dagelijkse sync voltooid')
+    log('info', `Sync voltooid (${type})`)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     setSetting('last_sync_status', `error: ${msg}`)
