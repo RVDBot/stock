@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
     "better-sqlite3": "^11.9.1",
     "next": "^15.3.0",
     "react": "^19.1.0",

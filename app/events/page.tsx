@@ -75,6 +75,7 @@ export default function EventsPage() {
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState<number | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
+  const [lookingUp, setLookingUp] = useState<number | null>(null)
   const [filterAttention, setFilterAttention] = useState(false)
   const cardRefs = useRef<Map<number, HTMLDivElement>>(new Map())
   const [peaks, setPeaks] = useState<Record<string, Peak[]>>({})
@@ -234,6 +235,28 @@ export default function EventsPage() {
       loadData()
     } finally {
       setDeleting(null)
+    }
+  }
+
+  async function handleAiLookup(eventId: number) {
+    setLookingUp(eventId)
+    try {
+      const res = await fetch('/api/events/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: eventId }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        alert(data.error || 'AI lookup mislukt')
+      } else if (!data.date) {
+        alert('Datum niet gevonden door AI')
+      }
+      loadData()
+    } catch {
+      alert('AI lookup mislukt')
+    } finally {
+      setLookingUp(null)
     }
   }
 
@@ -501,12 +524,26 @@ export default function EventsPage() {
                           )}
                           <span>Duur: <strong>{formatNumber(event.duration_days)} dagen</strong></span>
                           <span>Impact: <strong>+{formatNumber(event.impact_percentage)}%</strong></span>
+                          {!event.expected_date && event.last_checked_at && (
+                            <span className="text-text-tertiary">
+                              Laatst gecheckt: {new Date(event.last_checked_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </span>
+                          )}
                         </div>
                         {event.notes && (
                           <p className="text-[12px] text-text-tertiary mt-1.5">{event.notes}</p>
                         )}
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
+                        {event.ai_lookup === 1 && (
+                          <button
+                            onClick={() => handleAiLookup(event.id)}
+                            disabled={lookingUp === event.id}
+                            className="bg-surface-2 hover:bg-surface-3 text-text-secondary text-[12px] font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40"
+                          >
+                            {lookingUp === event.id ? 'Opzoeken...' : 'AI datum'}
+                          </button>
+                        )}
                         <button
                           onClick={() => startEdit(event)}
                           className="bg-surface-2 hover:bg-surface-3 text-text-secondary text-[12px] font-medium px-3 py-1.5 rounded-lg transition-colors"
