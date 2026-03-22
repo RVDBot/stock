@@ -5,6 +5,7 @@ export type StockStatus = 'order_now' | 'soon' | 'on_track'
 
 export interface ProductStatus {
   productId: number
+  wooProductId: number
   sku: string
   name: string
   currentStock: number
@@ -36,7 +37,7 @@ export function calculateProductStatus(productId: number): ProductStatus | null 
     LEFT JOIN suppliers s ON p.supplier_id = s.id
     WHERE p.id = ? AND p.active = 1
   `).get(productId) as {
-    id: number; sku: string; name: string; current_stock: number; price: number;
+    id: number; woo_product_id: number; sku: string; name: string; current_stock: number; price: number;
     supplier_id: number | null; supplier_name: string | null; lead_time_days: number | null
   } | undefined
 
@@ -99,6 +100,7 @@ export function calculateProductStatus(productId: number): ProductStatus | null 
 
   return {
     productId: product.id,
+    wooProductId: product.woo_product_id,
     sku: product.sku,
     name: product.name,
     currentStock: product.current_stock,

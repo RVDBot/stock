@@ -15,6 +15,15 @@ interface Event {
   created_at: string
 }
 
+interface Peak {
+  weekStart: string
+  weekEnd: string
+  weekNum: number
+  totalSales: number
+  avgWeeklySales: number
+  ratio: number
+}
+
 interface EventForm {
   name: string
   expected_date: string
@@ -62,6 +71,10 @@ export default function EventsPage() {
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
   const [filterAttention, setFilterAttention] = useState(false)
   const cardRefs = useRef<Map<number, HTMLDivElement>>(new Map())
+  const [peaks, setPeaks] = useState<Record<string, Peak[]>>({})
+  const [peaksLoading, setPeaksLoading] = useState(true)
+  const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set())
+  const formRef = useRef<HTMLDivElement>(null)
 
   function loadData() {
     setLoading(true)
@@ -90,7 +103,43 @@ export default function EventsPage() {
     }
   }
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => { loadData(); loadPeaks() }, [])
+
+  function loadPeaks() {
+    setPeaksLoading(true)
+    fetch('/api/peaks').then(r => r.json()).then(data => {
+      const p = data.peaks || {}
+      setPeaks(p)
+      // Expand the most recent year by default
+      const years = Object.keys(p).sort((a, b) => b.localeCompare(a))
+      if (years.length > 0) setExpandedYears(new Set([years[0]]))
+    }).finally(() => setPeaksLoading(false))
+  }
+
+  function toggleYear(year: string) {
+    setExpandedYears(prev => {
+      const next = new Set(prev)
+      if (next.has(year)) next.delete(year)
+      else next.add(year)
+      return next
+    })
+  }
+
+  function createEventFromPeak(peak: Peak) {
+    setShowForm(true)
+    setEditingId(null)
+    setForm({
+      name: '',
+      expected_date: peak.weekStart,
+      duration_days: '7',
+      impact_percentage: String(Math.round((peak.ratio - 1) * 100)),
+      recurring: true,
+      notes: '',
+    })
+    setTimeout(() => {
+      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 50)
+  }
 
   const sortedEvents = useMemo(() => {
     const now = new Date(new Date().toDateString())
@@ -323,7 +372,9 @@ export default function EventsPage() {
         </div>
 
         {/* Add form */}
-        {showForm && renderForm()}
+        <div ref={formRef}>
+          {showForm && renderForm()}
+        </div>
 
         {/* Summary */}
         <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5 mb-4">
@@ -472,6 +523,84 @@ export default function EventsPage() {
             })}
           </div>
         )}
+        {/* Historische pieken */}
+        <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5 mt-6">
+          <h2 className="text-[14px] font-semibold text-text-primary mb-4">Historische pieken</h2>
+          {peaksLoading ? (
+            <div className="space-y-2">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="flex justify-between items-center p-2">
+                  <div className="skeleton h-4 w-48" />
+                  <div className="skeleton h-4 w-24" />
+                </div>
+              ))}
+            </div>
+          ) : Object.keys(peaks).length === 0 ? (
+            <p className="text-text-tertiary text-[13px]">Geen verkooppieken gevonden in de historische data.</p>
+          ) : (
+            <div className="space-y-3">
+              {Object.keys(peaks).sort((a, b) => b.localeCompare(a)).map(year => {
+                const isOpen = expandedYears.has(year)
+                return (
+                  <div key={year}>
+                    <button
+                      onClick={() => toggleYear(year)}
+                      className="flex items-center gap-2 w-full text-left"
+                    >
+                      <svg
+                        className={`w-3.5 h-3.5 text-text-tertiary transition-transform duration-150 ${isOpen ? 'rotate-90' : ''}`}
+                        viewBox="0 0 16 16"
+                        fill="currentColor"
+                      >
+                        <path d="M6 3l5 5-5 5V3z" />
+                      </svg>
+                      <span className="text-[13px] font-semibold text-text-primary">{year}</span>
+                      <span className="text-[12px] text-text-tertiary">({peaks[year].length} {peaks[year].length === 1 ? 'piek' : 'pieken'})</span>
+                    </button>
+                    {isOpen && (
+                      <div className="mt-2 space-y-1.5 ml-5">
+                        {peaks[year].map((peak, i) => {
+                          const startDate = new Date(peak.weekStart)
+                          const endDate = new Date(peak.weekEnd)
+                          const startStr = startDate.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })
+                          const endStr = endDate.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })
+                          const isHigh = peak.ratio > 3
+                          const isMedium = peak.ratio >= 2 && peak.ratio <= 3
+
+                          return (
+                            <div key={i} className="flex items-center gap-3 p-2 rounded-lg bg-surface-0 border border-border-subtle">
+                              <div className="flex-1 min-w-0">
+                                <span className="text-text-primary text-[13px]">{startStr} — {endStr}</span>
+                                <span className="text-text-secondary text-[12px] ml-3">
+                                  {formatNumber(peak.totalSales)} verkocht (gem. {formatNumber(peak.avgWeeklySales)}/week)
+                                </span>
+                              </div>
+                              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-lg border shrink-0 ${
+                                isHigh
+                                  ? 'bg-danger/10 text-danger border-danger/20'
+                                  : isMedium
+                                    ? 'bg-warning/10 text-warning border-warning/20'
+                                    : 'bg-accent/10 text-accent border-accent/20'
+                              }`}>
+                                {peak.ratio}× gemiddeld
+                              </span>
+                              <button
+                                onClick={() => createEventFromPeak(peak)}
+                                className="text-[12px] font-medium px-3 py-1.5 rounded-lg bg-accent text-white hover:bg-accent-hover transition-all duration-150 shrink-0"
+                              >
+                                Event aanmaken
+                              </button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       </main>
     </div>
   )

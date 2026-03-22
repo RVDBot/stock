@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import Nav from '@/components/Nav'
 
 interface ProductStatus {
   productId: number
+  wooProductId: number
   sku: string
   name: string
   currentStock: number
@@ -37,6 +38,9 @@ export default function AlertsPage() {
   const [syncing, setSyncing] = useState(false)
   const [lastSyncAt, setLastSyncAt] = useState('')
   const [lastSyncStatus, setLastSyncStatus] = useState('')
+  const [wooUrl, setWooUrl] = useState('')
+  const [openMenu, setOpenMenu] = useState<number | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   function loadData() {
     setLoading(true)
@@ -48,6 +52,7 @@ export default function AlertsPage() {
       const settings = settData.settings || {}
       setLastSyncAt(settings.last_sync_at || '')
       setLastSyncStatus(settings.last_sync_status || '')
+      setWooUrl(settings.woo_url || '')
     }).finally(() => setLoading(false))
   }
 
@@ -65,7 +70,30 @@ export default function AlertsPage() {
     }
   }
 
+  async function ignoreProduct(productId: number) {
+    await fetch('/api/products', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [productId], active: 0 }),
+    })
+    setOpenMenu(null)
+    loadData()
+  }
+
   useEffect(() => { loadData() }, [])
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenu(null)
+      }
+    }
+    if (openMenu !== null) {
+      document.addEventListener('mousedown', handleClick)
+      return () => document.removeEventListener('mousedown', handleClick)
+    }
+  }, [openMenu])
 
   const alerts = useMemo(() =>
     products.filter(p => p.status === 'order_now' || p.status === 'soon'),
@@ -77,6 +105,9 @@ export default function AlertsPage() {
     soon: products.filter(p => p.status === 'soon').length,
     total: products.length,
   }), [products])
+
+  const adminBase = wooUrl ? `${wooUrl.replace(/\/$/, '')}/wp-admin/post.php` : ''
+  const siteBase = wooUrl ? wooUrl.replace(/\/$/, '') : ''
 
   return (
     <div className="min-h-screen">
@@ -162,9 +193,54 @@ export default function AlertsPage() {
                         </p>
                       )}
                     </div>
-                    <div className="shrink-0 text-right">
-                      <p className="text-[16px] font-bold text-text-primary tabular-nums">{p.daysUntilEmpty}d</p>
-                      <p className="text-text-tertiary text-[11px]">tot leeg</p>
+                    <div className="flex items-start gap-2 shrink-0">
+                      <div className="text-right">
+                        <p className="text-[16px] font-bold text-text-primary tabular-nums">{p.daysUntilEmpty}d</p>
+                        <p className="text-text-tertiary text-[11px]">tot leeg</p>
+                      </div>
+                      {/* 3-dot menu */}
+                      <div className="relative" ref={openMenu === p.productId ? menuRef : undefined}>
+                        <button
+                          onClick={() => setOpenMenu(openMenu === p.productId ? null : p.productId)}
+                          className="p-1.5 rounded-lg text-text-tertiary hover:text-text-secondary hover:bg-surface-2 transition-all duration-150"
+                        >
+                          <svg className="w-4 h-4" viewBox="0 0 16 16" fill="currentColor">
+                            <circle cx="8" cy="3" r="1.5" />
+                            <circle cx="8" cy="8" r="1.5" />
+                            <circle cx="8" cy="13" r="1.5" />
+                          </svg>
+                        </button>
+                        {openMenu === p.productId && (
+                          <div className="absolute right-0 top-8 z-50 w-48 bg-surface-1 rounded-xl border border-border-subtle shadow-lg py-1 animate-row">
+                            {adminBase && (
+                              <a
+                                href={`${adminBase}?post=${p.wooProductId}&action=edit`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block px-3 py-2 text-[13px] text-text-secondary hover:bg-surface-2 hover:text-text-primary transition-colors"
+                              >
+                                Product wijzigen
+                              </a>
+                            )}
+                            {siteBase && (
+                              <a
+                                href={`${siteBase}/?p=${p.wooProductId}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block px-3 py-2 text-[13px] text-text-secondary hover:bg-surface-2 hover:text-text-primary transition-colors"
+                              >
+                                Product bekijken
+                              </a>
+                            )}
+                            <button
+                              onClick={() => ignoreProduct(p.productId)}
+                              className="block w-full text-left px-3 py-2 text-[13px] text-danger hover:bg-danger/5 transition-colors"
+                            >
+                              Product negeren
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
