@@ -41,8 +41,6 @@ export default function SettingsPage() {
 
   // Suppliers
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
-  const [editingSupplier, setEditingSupplier] = useState<number | null>(null)
-  const [editForm, setEditForm] = useState({ name: '', lead_time_days: '', contact_info: '', notes: '' })
   const [newSupplier, setNewSupplier] = useState({ name: '', lead_time_days: '', contact_info: '', notes: '' })
   const [supplierSaving, setSupplierSaving] = useState(false)
 
@@ -193,47 +191,6 @@ export default function SettingsPage() {
     } finally {
       setSupplierSaving(false)
     }
-  }
-
-  async function saveSupplier(id: number) {
-    setSupplierSaving(true)
-    try {
-      await fetch('/api/suppliers', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id,
-          name: editForm.name,
-          lead_time_days: parseInt(editForm.lead_time_days),
-          contact_info: editForm.contact_info || null,
-          notes: editForm.notes || null,
-        }),
-      })
-      setEditingSupplier(null)
-      loadData()
-    } finally {
-      setSupplierSaving(false)
-    }
-  }
-
-  async function deleteSupplier(id: number) {
-    if (!confirm('Weet je zeker dat je deze fabrikant wilt verwijderen?')) return
-    await fetch('/api/suppliers', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
-    })
-    loadData()
-  }
-
-  function startEdit(s: Supplier) {
-    setEditingSupplier(s.id)
-    setEditForm({
-      name: s.name,
-      lead_time_days: String(s.lead_time_days),
-      contact_info: s.contact_info || '',
-      notes: s.notes || '',
-    })
   }
 
   // Historical sync
@@ -419,41 +376,15 @@ export default function SettingsPage() {
               {suppliers.length > 0 && (
                 <div className="space-y-2 mb-4">
                   {suppliers.map(s => (
-                    <div key={s.id} className="flex items-center gap-2 p-2 rounded-lg bg-surface-0 border border-border-subtle">
-                      {editingSupplier === s.id ? (
-                        <>
-                          <input
-                            className={`${inputClass} !w-auto flex-1`}
-                            value={editForm.name}
-                            onChange={e => setEditForm({ ...editForm, name: e.target.value })}
-                            placeholder="Naam"
-                          />
-                          <input
-                            type="number"
-                            className={`${inputClass} !w-20`}
-                            value={editForm.lead_time_days}
-                            onChange={e => setEditForm({ ...editForm, lead_time_days: e.target.value })}
-                            placeholder="Dagen"
-                          />
-                          <input
-                            className={`${inputClass} !w-auto flex-1`}
-                            value={editForm.contact_info}
-                            onChange={e => setEditForm({ ...editForm, contact_info: e.target.value })}
-                            placeholder="Contact"
-                          />
-                          <button className={primaryBtn} disabled={supplierSaving} onClick={() => saveSupplier(s.id)}>Opslaan</button>
-                          <button className={secondaryBtn} onClick={() => setEditingSupplier(null)}>Annuleren</button>
-                        </>
-                      ) : (
-                        <>
-                          <span className="text-text-primary text-[13px] font-medium flex-1">{s.name}</span>
-                          <span className="text-text-secondary text-[12px]">{s.lead_time_days} dagen</span>
-                          {s.contact_info && <span className="text-text-tertiary text-[12px]">{s.contact_info}</span>}
-                          <button className={secondaryBtn} onClick={() => startEdit(s)}>Bewerken</button>
-                          <button className={dangerBtn} onClick={() => deleteSupplier(s.id)}>Verwijderen</button>
-                        </>
-                      )}
-                    </div>
+                    <a
+                      key={s.id}
+                      href={`/suppliers/${s.id}`}
+                      className="flex items-center gap-2 p-2 rounded-lg bg-surface-0 border border-border-subtle hover:bg-surface-hover transition-colors"
+                    >
+                      <span className="text-text-primary text-[13px] font-medium flex-1">{s.name}</span>
+                      <span className="text-text-secondary text-[12px]">{s.lead_time_days} dagen</span>
+                      <span className="text-accent text-[12px]">&rarr;</span>
+                    </a>
                   ))}
                 </div>
               )}

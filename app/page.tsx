@@ -177,7 +177,7 @@ export default function AlertsPage() {
               return (
                 <div
                   key={p.productId}
-                  className="bg-surface-1 rounded-2xl border border-border-subtle p-4 animate-row"
+                  className={`bg-surface-1 rounded-2xl border border-border-subtle p-4 animate-row ${openMenu === p.productId ? 'relative z-50' : 'relative z-0'}`}
                   style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
                 >
                   <div className="flex items-start justify-between gap-3">
