@@ -41,6 +41,7 @@ export default function AlertsPage() {
   const [wooUrl, setWooUrl] = useState('')
   const [openMenu, setOpenMenu] = useState<number | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  const [search, setSearch] = useState('')
 
   function loadData() {
     setLoading(true)
@@ -95,10 +96,18 @@ export default function AlertsPage() {
     }
   }, [openMenu])
 
-  const alerts = useMemo(() =>
-    products.filter(p => p.status === 'order_now' || p.status === 'soon'),
-    [products]
-  )
+  const alerts = useMemo(() => {
+    let filtered = products.filter(p => p.status === 'order_now' || p.status === 'soon')
+    if (search) {
+      const q = search.toLowerCase()
+      filtered = filtered.filter(p =>
+        p.sku.toLowerCase().includes(q) ||
+        p.name.toLowerCase().includes(q) ||
+        (p.supplierName && p.supplierName.toLowerCase().includes(q))
+      )
+    }
+    return filtered
+  }, [products, search])
 
   const summary = useMemo(() => ({
     orderNow: products.filter(p => p.status === 'order_now').length,
@@ -130,6 +139,17 @@ export default function AlertsPage() {
               <p className="text-[22px] font-bold text-text-primary tracking-tight leading-none tabular-nums">{summary.total}</p>
             </div>
           </div>
+        </div>
+
+        {/* Search */}
+        <div className="mb-4">
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Zoek op SKU, naam of fabrikant..."
+            className="w-full text-[13px] px-3 py-2 rounded-lg bg-surface-1 border border-border-subtle text-text-primary outline-none focus:border-accent transition-colors"
+          />
         </div>
 
         {loading ? (

@@ -61,6 +61,9 @@ export default function SettingsPage() {
   const [ignoredProducts, setIgnoredProducts] = useState<ProductStatus[]>([])
   const [showIgnored, setShowIgnored] = useState(false)
 
+  // Search
+  const [productSearch, setProductSearch] = useState('')
+
   function loadData() {
     setLoading(true)
     Promise.all([
@@ -273,17 +276,16 @@ export default function SettingsPage() {
   }
 
   function handleProductClick(e: React.MouseEvent, index: number) {
-    const id = unassignedProducts[index].productId
+    const id = filteredUnassigned[index].productId
     const isShift = e.shiftKey
 
     if (isShift && lastClickedIndex.current !== null) {
-      // Prevent text selection when shift-clicking
       e.preventDefault()
       const start = Math.min(lastClickedIndex.current, index)
       const end = Math.max(lastClickedIndex.current, index)
       const ids = new Set(selectedProducts)
       for (let i = start; i <= end; i++) {
-        ids.add(unassignedProducts[i].productId)
+        ids.add(filteredUnassigned[i].productId)
       }
       setSelectedProducts(ids)
     } else {
@@ -295,11 +297,17 @@ export default function SettingsPage() {
     lastClickedIndex.current = index
   }
 
+  const filteredUnassigned = unassignedProducts.filter(p => {
+    if (!productSearch) return true
+    const q = productSearch.toLowerCase()
+    return p.sku.toLowerCase().includes(q) || p.name.toLowerCase().includes(q)
+  })
+
   function toggleAllProducts() {
-    if (selectedProducts.size === unassignedProducts.length) {
+    if (selectedProducts.size === filteredUnassigned.length && filteredUnassigned.length > 0) {
       setSelectedProducts(new Set())
     } else {
-      setSelectedProducts(new Set(unassignedProducts.map(p => p.productId)))
+      setSelectedProducts(new Set(filteredUnassigned.map(p => p.productId)))
     }
   }
 
@@ -610,19 +618,32 @@ export default function SettingsPage() {
                   </button>
                 </div>
 
+                {/* Search */}
+                <div className="mb-3">
+                  <input
+                    type="text"
+                    className={inputClass}
+                    value={productSearch}
+                    onChange={e => setProductSearch(e.target.value)}
+                    placeholder="Zoek op SKU of naam..."
+                  />
+                </div>
+
                 {/* Select all */}
                 <div className="flex items-center gap-2 mb-2 px-2">
                   <input
                     type="checkbox"
-                    checked={selectedProducts.size === unassignedProducts.length && unassignedProducts.length > 0}
+                    checked={selectedProducts.size === filteredUnassigned.length && filteredUnassigned.length > 0}
                     onChange={toggleAllProducts}
                     className="w-3.5 h-3.5 accent-accent cursor-pointer"
                   />
-                  <span className="text-[11px] text-text-tertiary font-semibold uppercase tracking-wider">Alles selecteren</span>
+                  <span className="text-[11px] text-text-tertiary font-semibold uppercase tracking-wider">
+                    Alles selecteren{productSearch && ` (${filteredUnassigned.length} resultaten)`}
+                  </span>
                 </div>
 
                 <div className="space-y-1">
-                  {unassignedProducts.map((p, i) => (
+                  {filteredUnassigned.map((p, i) => (
                     <div
                       key={p.productId}
                       className={`flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-colors select-none ${

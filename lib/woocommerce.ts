@@ -73,14 +73,14 @@ async function wooFetch<T>(endpoint: string, params: Record<string, string> = {}
 
 export async function fetchAllProducts(): Promise<WooProduct[]> {
   log('info', 'WooCommerce: producten ophalen...')
-  const products = await wooFetch<WooProduct>('products', { status: 'publish' })
+  const products = await wooFetch<WooProduct>('products', { status: 'publish,private,draft' })
   log('info', `WooCommerce: ${products.length} producten opgehaald (incl. variable)`)
 
   // Fetch variations for variable products
   const allProducts: WooProduct[] = []
   for (const p of products) {
     if (p.type === 'variable') {
-      const variations = await wooFetch<WooVariation>(`products/${p.id}/variations`)
+      const variations = await wooFetch<WooVariation>(`products/${p.id}/variations`, { status: 'any' })
       for (const v of variations) {
         if (!v.sku) continue
         const attrStr = v.attributes.map(a => a.option).join(' / ')
