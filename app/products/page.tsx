@@ -51,6 +51,8 @@ export default function ProductsPage() {
   const [bulkSupplierId, setBulkSupplierId] = useState('')
   const [bulkAssigning, setBulkAssigning] = useState(false)
   const [showIgnored, setShowIgnored] = useState(false)
+  const [sortCol, setSortCol] = useState<'sku' | 'name' | 'supplier' | 'stock'>('sku')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const lastClickedIndex = useRef<number | null>(null)
 
   function loadData() {
@@ -87,14 +89,39 @@ export default function ProductsPage() {
   useEffect(() => { loadData() }, [])
 
   const filtered = useMemo(() => {
-    if (!search) return products
-    const q = search.toLowerCase()
-    return products.filter(p =>
-      p.sku.toLowerCase().includes(q) ||
-      p.name.toLowerCase().includes(q) ||
-      (p.supplierName && p.supplierName.toLowerCase().includes(q))
-    )
-  }, [products, search])
+    let list = products
+    if (search) {
+      const q = search.toLowerCase()
+      list = list.filter(p =>
+        p.sku.toLowerCase().includes(q) ||
+        p.name.toLowerCase().includes(q) ||
+        (p.supplierName && p.supplierName.toLowerCase().includes(q))
+      )
+    }
+    const dir = sortDir === 'asc' ? 1 : -1
+    return [...list].sort((a, b) => {
+      switch (sortCol) {
+        case 'sku': return a.sku.localeCompare(b.sku) * dir
+        case 'name': return a.name.localeCompare(b.name) * dir
+        case 'supplier': return (a.supplierName || '').localeCompare(b.supplierName || '') * dir
+        case 'stock': return (a.currentStock - b.currentStock) * dir
+      }
+    })
+  }, [products, search, sortCol, sortDir])
+
+  function handleSort(col: typeof sortCol) {
+    if (sortCol === col) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortCol(col)
+      setSortDir('asc')
+    }
+  }
+
+  function SortArrow({ col }: { col: typeof sortCol }) {
+    if (sortCol !== col) return null
+    return <span className="ml-0.5">{sortDir === 'asc' ? '↑' : '↓'}</span>
+  }
 
   function handleProductClick(e: React.MouseEvent, index: number) {
     const id = filtered[index].productId
@@ -204,50 +231,47 @@ export default function ProductsPage() {
           </div>
         </div>
 
-        {/* Search */}
-        <div className="mb-3">
+        {/* Search + bulk actions */}
+        <div className="flex items-center gap-3 mb-3">
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Zoek op SKU, naam of fabrikant..."
-            className="w-full text-[13px] px-3 py-2 rounded-lg bg-surface-1 border border-border-subtle text-text-primary outline-none focus:border-accent transition-colors"
+            className="w-64 text-[13px] px-3 py-2 rounded-lg bg-surface-1 border border-border-subtle text-text-primary outline-none focus:border-accent transition-colors"
           />
+          {selectedProducts.size > 0 && (
+            <>
+              <span className="text-[12px] text-text-secondary font-medium whitespace-nowrap">
+                {selectedProducts.size} geselecteerd
+              </span>
+              <select
+                className="text-[13px] px-3 py-1.5 rounded-lg bg-surface-0 border border-border-subtle text-text-primary w-48"
+                value={bulkSupplierId}
+                onChange={e => setBulkSupplierId(e.target.value)}
+              >
+                <option value="">Kies fabrikant...</option>
+                {suppliers.map(s => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+              <button
+                onClick={bulkAssignSupplier}
+                disabled={!bulkSupplierId || bulkAssigning}
+                className="text-[12px] font-medium px-4 py-1.5 rounded-lg bg-accent text-white hover:bg-accent-hover disabled:opacity-40 transition-all duration-150"
+              >
+                Koppelen
+              </button>
+              <button
+                onClick={ignoreSelected}
+                disabled={bulkAssigning}
+                className="text-[12px] font-medium px-3 py-1.5 rounded-lg text-danger hover:bg-danger/10 transition-all duration-150"
+              >
+                Negeren
+              </button>
+            </>
+          )}
         </div>
-
-        {/* Bulk action bar */}
-        {selectedProducts.size > 0 && (
-          <div className="flex items-center gap-3 mb-3 p-3 rounded-xl bg-surface-1 border border-border-subtle animate-row">
-            <span className="text-[12px] text-text-secondary font-medium">
-              {selectedProducts.size} geselecteerd
-            </span>
-            <div className="flex-1" />
-            <select
-              className="text-[13px] px-3 py-1.5 rounded-lg bg-surface-0 border border-border-subtle text-text-primary w-48"
-              value={bulkSupplierId}
-              onChange={e => setBulkSupplierId(e.target.value)}
-            >
-              <option value="">Kies fabrikant...</option>
-              {suppliers.map(s => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-            <button
-              onClick={bulkAssignSupplier}
-              disabled={!bulkSupplierId || bulkAssigning}
-              className="text-[12px] font-medium px-4 py-1.5 rounded-lg bg-accent text-white hover:bg-accent-hover disabled:opacity-40 transition-all duration-150"
-            >
-              Koppelen
-            </button>
-            <button
-              onClick={ignoreSelected}
-              disabled={bulkAssigning}
-              className="text-[12px] font-medium px-3 py-1.5 rounded-lg text-danger hover:bg-danger/10 transition-all duration-150"
-            >
-              Negeren
-            </button>
-          </div>
-        )}
 
         {loading ? (
           <div className="space-y-1">
@@ -268,10 +292,18 @@ export default function ProductsPage() {
                 className="w-3.5 h-3.5 accent-accent cursor-pointer"
               />
               <span className="w-2" />
-              <span className="w-24">SKU</span>
-              <span className="flex-1">Naam</span>
-              <span className="w-36">Fabrikant</span>
-              <span className="w-20 text-right">Voorraad</span>
+              <button onClick={() => handleSort('sku')} className="w-24 text-left hover:text-text-primary transition-colors cursor-pointer">
+                SKU<SortArrow col="sku" />
+              </button>
+              <button onClick={() => handleSort('name')} className="flex-1 text-left hover:text-text-primary transition-colors cursor-pointer">
+                Naam<SortArrow col="name" />
+              </button>
+              <button onClick={() => handleSort('supplier')} className="w-36 text-left hover:text-text-primary transition-colors cursor-pointer">
+                Fabrikant<SortArrow col="supplier" />
+              </button>
+              <button onClick={() => handleSort('stock')} className="w-20 text-right hover:text-text-primary transition-colors cursor-pointer">
+                Voorraad<SortArrow col="stock" />
+              </button>
             </div>
 
             {/* Product rows */}
