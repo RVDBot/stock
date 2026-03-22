@@ -34,9 +34,14 @@ export async function syncProducts() {
   // a composite/variable), prefer the one that manages its own stock. If multiple manage
   // stock, take the highest value.
   const skuMap = new Map<string, typeof products[0]>()
+  const skuDuplicates = new Map<string, typeof products[0][]>()
   for (const p of products) {
     if (!p.sku) continue
     if (p.sku.includes('+')) continue
+
+    // Track all occurrences for debugging
+    if (!skuDuplicates.has(p.sku)) skuDuplicates.set(p.sku, [])
+    skuDuplicates.get(p.sku)!.push(p)
 
     const existing = skuMap.get(p.sku)
     if (!existing) {
@@ -53,6 +58,14 @@ export async function syncProducts() {
           skuMap.set(p.sku, p)
         }
       }
+    }
+  }
+
+  // Log duplicate SKUs for debugging
+  for (const [sku, entries] of skuDuplicates) {
+    if (entries.length > 1) {
+      const chosen = skuMap.get(sku)!
+      log('info', `SKU ${sku} komt ${entries.length}x voor: ${entries.map(e => `[id=${e.id}, stock=${e.stock_quantity}, manage=${e.manage_stock}, name="${e.name}"]`).join(', ')} → gekozen: id=${chosen.id} stock=${chosen.stock_quantity}`)
     }
   }
 
