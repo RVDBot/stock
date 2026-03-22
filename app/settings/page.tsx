@@ -8,6 +8,7 @@ export default function SettingsPage() {
   const [syncing, setSyncing] = useState(false)
   const [lastSyncAt, setLastSyncAt] = useState('')
   const [lastSyncStatus, setLastSyncStatus] = useState('')
+  const [lastSyncType, setLastSyncType] = useState('')
 
   // WooCommerce settings
   const [wooUrl, setWooUrl] = useState('')
@@ -16,6 +17,7 @@ export default function SettingsPage() {
   const [hasWooSecret, setHasWooSecret] = useState(false)
   const [wooSaving, setWooSaving] = useState(false)
   const [wooMsg, setWooMsg] = useState('')
+  const [wooExpanded, setWooExpanded] = useState(false)
 
   // Stock settings
   const [warehouseInboundDays, setWarehouseInboundDays] = useState('14')
@@ -33,6 +35,7 @@ export default function SettingsPage() {
       const settings = settData.settings || {}
       setLastSyncAt(settings.last_sync_at || '')
       setLastSyncStatus(settings.last_sync_status || '')
+      setLastSyncType(settings.last_sync_type || '')
       setWooUrl(settings.woo_url || '')
       setWooConsumerKey(settings.woo_consumer_key || '')
       setHasWooSecret(settings.has_woo_consumer_secret === '1')
@@ -170,53 +173,80 @@ export default function SettingsPage() {
           <div className="space-y-4">
             {/* WooCommerce verbinding */}
             <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5">
-              <h2 className="text-[14px] font-semibold text-text-primary mb-3">WooCommerce verbinding</h2>
-              <div className="grid grid-cols-1 gap-3 mb-3">
-                <div>
-                  <label className={labelClass}>URL</label>
-                  <input
-                    type="url"
-                    className={inputClass}
-                    value={wooUrl}
-                    onChange={e => setWooUrl(e.target.value)}
-                    placeholder="https://jouwwinkel.nl"
-                  />
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-[14px] font-semibold text-text-primary">WooCommerce verbinding</h2>
+                  {(() => {
+                    const hasUrl = !!wooUrl
+                    const hasKey = !!wooConsumerKey
+                    const hasSecret = hasWooSecret
+                    const isConfigured = hasUrl && hasKey && hasSecret
+                    const hasErrors = lastSyncStatus.startsWith('error')
+                    const color = !isConfigured ? 'bg-danger' : hasErrors ? 'bg-warning' : 'bg-success'
+                    return (
+                      <span className={`w-2.5 h-2.5 rounded-full ${color} shrink-0`} title={
+                        !isConfigured ? 'Niet geconfigureerd' : hasErrors ? 'Verbonden met fouten' : 'Verbonden'
+                      } />
+                    )
+                  })()}
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={labelClass}>Consumer Key</label>
-                    <input
-                      type="text"
-                      className={inputClass}
-                      value={wooConsumerKey}
-                      onChange={e => setWooConsumerKey(e.target.value)}
-                      placeholder="ck_..."
-                    />
+                <button
+                  onClick={() => setWooExpanded(!wooExpanded)}
+                  className={secondaryBtn}
+                >
+                  {wooExpanded ? 'Sluiten' : 'Wijzigen'}
+                </button>
+              </div>
+              {wooExpanded && (
+                <div className="mt-4">
+                  <div className="grid grid-cols-1 gap-3 mb-3">
+                    <div>
+                      <label className={labelClass}>URL</label>
+                      <input
+                        type="url"
+                        className={inputClass}
+                        value={wooUrl}
+                        onChange={e => setWooUrl(e.target.value)}
+                        placeholder="https://jouwwinkel.nl"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className={labelClass}>Consumer Key</label>
+                        <input
+                          type="text"
+                          className={inputClass}
+                          value={wooConsumerKey}
+                          onChange={e => setWooConsumerKey(e.target.value)}
+                          placeholder="ck_..."
+                        />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Consumer Secret</label>
+                        <input
+                          type="password"
+                          className={inputClass}
+                          value={wooConsumerSecret}
+                          onChange={e => setWooConsumerSecret(e.target.value)}
+                          placeholder={hasWooSecret ? 'Bewaard (typ om te wijzigen)' : 'cs_...'}
+                        />
+                        {hasWooSecret && !wooConsumerSecret && (
+                          <span className="text-success text-[12px] mt-0.5 block">Bewaard</span>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <label className={labelClass}>Consumer Secret</label>
-                    <input
-                      type="password"
-                      className={inputClass}
-                      value={wooConsumerSecret}
-                      onChange={e => setWooConsumerSecret(e.target.value)}
-                      placeholder={hasWooSecret ? 'Bewaard (typ om te wijzigen)' : 'cs_...'}
-                    />
-                    {hasWooSecret && !wooConsumerSecret && (
-                      <span className="text-success text-[12px] mt-0.5 block">Bewaard</span>
-                    )}
+                  <div className="flex items-center gap-2">
+                    <button className={primaryBtn} disabled={wooSaving} onClick={saveWooSettings}>
+                      {wooSaving ? 'Opslaan...' : 'Opslaan'}
+                    </button>
+                    <button className={secondaryBtn} disabled={syncing} onClick={testConnection}>
+                      {syncing ? 'Testen...' : 'Test verbinding'}
+                    </button>
+                    {wooMsg && <span className="text-success text-[12px]">{wooMsg}</span>}
                   </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button className={primaryBtn} disabled={wooSaving} onClick={saveWooSettings}>
-                  {wooSaving ? 'Opslaan...' : 'Opslaan'}
-                </button>
-                <button className={secondaryBtn} disabled={syncing} onClick={testConnection}>
-                  {syncing ? 'Testen...' : 'Test verbinding'}
-                </button>
-                {wooMsg && <span className="text-success text-[12px]">{wooMsg}</span>}
-              </div>
+              )}
             </div>
 
             {/* Voorraad instellingen */}
@@ -260,6 +290,11 @@ export default function SettingsPage() {
                       <span className="font-medium">{new Date(lastSyncAt).toLocaleString('nl-NL')}</span>
                       {' \u2014 '}
                       <span className={lastSyncStatus === 'success' ? 'text-success' : 'text-danger'}>{lastSyncStatus}</span>
+                      {lastSyncType && (
+                        <span className="text-text-tertiary ml-2">
+                          ({lastSyncType === 'manual' ? 'handmatig' : lastSyncType === 'automated' ? 'geautomatiseerd' : lastSyncType === 'historical' ? 'historische import' : lastSyncType})
+                        </span>
+                      )}
                     </>
                   ) : (
                     <span className="text-text-tertiary">Nog niet gesynchroniseerd</span>

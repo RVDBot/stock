@@ -10,6 +10,8 @@ interface Event {
   duration_days: number
   impact_percentage: number
   recurring: number
+  ai_lookup: number
+  ai_skip_months: number
   last_checked_at: string | null
   notes: string | null
   created_at: string
@@ -30,6 +32,8 @@ interface EventForm {
   duration_days: string
   impact_percentage: string
   recurring: boolean
+  ai_lookup: boolean
+  ai_skip_months: string
   notes: string
 }
 
@@ -39,6 +43,8 @@ const EMPTY_FORM: EventForm = {
   duration_days: '7',
   impact_percentage: '100',
   recurring: true,
+  ai_lookup: true,
+  ai_skip_months: '6',
   notes: '',
 }
 
@@ -73,7 +79,6 @@ export default function EventsPage() {
   const cardRefs = useRef<Map<number, HTMLDivElement>>(new Map())
   const [peaks, setPeaks] = useState<Record<string, Peak[]>>({})
   const [peaksLoading, setPeaksLoading] = useState(true)
-  const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set())
   const formRef = useRef<HTMLDivElement>(null)
 
   function loadData() {
@@ -108,21 +113,8 @@ export default function EventsPage() {
   function loadPeaks() {
     setPeaksLoading(true)
     fetch('/api/peaks').then(r => r.json()).then(data => {
-      const p = data.peaks || {}
-      setPeaks(p)
-      // Expand the most recent year by default
-      const years = Object.keys(p).sort((a, b) => b.localeCompare(a))
-      if (years.length > 0) setExpandedYears(new Set([years[0]]))
+      setPeaks(data.peaks || {})
     }).finally(() => setPeaksLoading(false))
-  }
-
-  function toggleYear(year: string) {
-    setExpandedYears(prev => {
-      const next = new Set(prev)
-      if (next.has(year)) next.delete(year)
-      else next.add(year)
-      return next
-    })
   }
 
   function createEventFromPeak(peak: Peak) {
@@ -134,6 +126,8 @@ export default function EventsPage() {
       duration_days: '7',
       impact_percentage: String(Math.round((peak.ratio - 1) * 100)),
       recurring: true,
+      ai_lookup: true,
+      ai_skip_months: '6',
       notes: '',
     })
     setTimeout(() => {
@@ -179,6 +173,8 @@ export default function EventsPage() {
       duration_days: String(event.duration_days),
       impact_percentage: String(event.impact_percentage),
       recurring: event.recurring === 1,
+      ai_lookup: event.ai_lookup === 1,
+      ai_skip_months: String(event.ai_skip_months),
       notes: event.notes || '',
     })
   }
@@ -206,6 +202,8 @@ export default function EventsPage() {
       duration_days: parseInt(form.duration_days) || 7,
       impact_percentage: parseInt(form.impact_percentage) || 100,
       recurring: form.recurring ? 1 : 0,
+      ai_lookup: form.ai_lookup ? 1 : 0,
+      ai_skip_months: parseInt(form.ai_skip_months) || 6,
       notes: form.notes.trim() || null,
     }
 
@@ -303,6 +301,30 @@ export default function EventsPage() {
               <span className="text-text-secondary text-[13px]">Terugkerend (jaarlijks)</span>
             </label>
           </div>
+          <div className="flex items-end">
+            <label className="flex items-center gap-2 cursor-pointer pb-2">
+              <input
+                type="checkbox"
+                checked={form.ai_lookup}
+                onChange={e => setForm(f => ({ ...f, ai_lookup: e.target.checked }))}
+                className="w-4 h-4 rounded accent-accent"
+              />
+              <span className="text-text-secondary text-[13px]">AI datum opzoeken</span>
+            </label>
+          </div>
+          {form.ai_lookup && (
+            <div>
+              <label className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider block mb-1">Overslaan (maanden)</label>
+              <input
+                type="number"
+                min="1"
+                value={form.ai_skip_months}
+                onChange={e => setForm(f => ({ ...f, ai_skip_months: e.target.value }))}
+                className="w-full bg-surface-0 border border-border rounded-xl px-3 py-2 text-[13px] text-text-primary outline-none focus:border-accent transition-colors"
+              />
+              <span className="text-text-tertiary text-[11px] mt-0.5 block">Na opzoeken, X maanden overslaan</span>
+            </div>
+          )}
           <div className="sm:col-span-2">
             <label className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider block mb-1">Notities</label>
             <textarea
@@ -538,66 +560,51 @@ export default function EventsPage() {
           ) : Object.keys(peaks).length === 0 ? (
             <p className="text-text-tertiary text-[13px]">Geen verkooppieken gevonden in de historische data.</p>
           ) : (
-            <div className="space-y-3">
-              {Object.keys(peaks).sort((a, b) => b.localeCompare(a)).map(year => {
-                const isOpen = expandedYears.has(year)
-                return (
-                  <div key={year}>
-                    <button
-                      onClick={() => toggleYear(year)}
-                      className="flex items-center gap-2 w-full text-left"
-                    >
-                      <svg
-                        className={`w-3.5 h-3.5 text-text-tertiary transition-transform duration-150 ${isOpen ? 'rotate-90' : ''}`}
-                        viewBox="0 0 16 16"
-                        fill="currentColor"
-                      >
-                        <path d="M6 3l5 5-5 5V3z" />
-                      </svg>
-                      <span className="text-[13px] font-semibold text-text-primary">{year}</span>
-                      <span className="text-[12px] text-text-tertiary">({peaks[year].length} {peaks[year].length === 1 ? 'piek' : 'pieken'})</span>
-                    </button>
-                    {isOpen && (
-                      <div className="mt-2 space-y-1.5 ml-5">
-                        {peaks[year].map((peak, i) => {
-                          const startDate = new Date(peak.weekStart)
-                          const endDate = new Date(peak.weekEnd)
-                          const startStr = startDate.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })
-                          const endStr = endDate.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })
-                          const isHigh = peak.ratio > 3
-                          const isMedium = peak.ratio >= 2 && peak.ratio <= 3
-
-                          return (
-                            <div key={i} className="flex items-center gap-3 p-2 rounded-lg bg-surface-0 border border-border-subtle">
-                              <div className="flex-1 min-w-0">
-                                <span className="text-text-primary text-[13px]">{startStr} — {endStr}</span>
-                                <span className="text-text-secondary text-[12px] ml-3">
-                                  {formatNumber(peak.totalSales)} verkocht (gem. {formatNumber(peak.avgWeeklySales)}/week)
-                                </span>
-                              </div>
-                              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-lg border shrink-0 ${
-                                isHigh
-                                  ? 'bg-danger/10 text-danger border-danger/20'
-                                  : isMedium
-                                    ? 'bg-warning/10 text-warning border-warning/20'
-                                    : 'bg-accent/10 text-accent border-accent/20'
-                              }`}>
-                                {peak.ratio}× gemiddeld
-                              </span>
-                              <button
-                                onClick={() => createEventFromPeak(peak)}
-                                className="text-[12px] font-medium px-3 py-1.5 rounded-lg bg-accent text-white hover:bg-accent-hover transition-all duration-150 shrink-0"
-                              >
-                                Event aanmaken
-                              </button>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
+            <div className="space-y-4">
+              {Object.keys(peaks).sort((a, b) => b.localeCompare(a)).map(year => (
+                <div key={year}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-[13px] font-semibold text-text-primary">{year}</span>
+                    <span className="text-[12px] text-text-tertiary">({peaks[year].length} {peaks[year].length === 1 ? 'piek' : 'pieken'})</span>
                   </div>
-                )
-              })}
+                  <div className="space-y-1.5">
+                    {peaks[year].map((peak, i) => {
+                      const startDate = new Date(peak.weekStart)
+                      const endDate = new Date(peak.weekEnd)
+                      const startStr = startDate.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })
+                      const endStr = endDate.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })
+                      const isHigh = peak.ratio > 3
+                      const isMedium = peak.ratio >= 2 && peak.ratio <= 3
+
+                      return (
+                        <div key={i} className="flex items-center gap-3 p-2 rounded-lg bg-surface-0 border border-border-subtle">
+                          <div className="flex-1 min-w-0">
+                            <span className="text-text-primary text-[13px]">{startStr} — {endStr}</span>
+                            <span className="text-text-secondary text-[12px] ml-3">
+                              {formatNumber(peak.totalSales)} verkocht (gem. {formatNumber(peak.avgWeeklySales)}/week)
+                            </span>
+                          </div>
+                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-lg border shrink-0 ${
+                            isHigh
+                              ? 'bg-danger/10 text-danger border-danger/20'
+                              : isMedium
+                                ? 'bg-warning/10 text-warning border-warning/20'
+                                : 'bg-accent/10 text-accent border-accent/20'
+                          }`}>
+                            {peak.ratio}× gemiddeld
+                          </span>
+                          <button
+                            onClick={() => createEventFromPeak(peak)}
+                            className="text-[12px] font-medium px-3 py-1.5 rounded-lg bg-accent text-white hover:bg-accent-hover transition-all duration-150 shrink-0"
+                          >
+                            Event aanmaken
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
