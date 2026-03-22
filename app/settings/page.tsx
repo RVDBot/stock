@@ -52,6 +52,9 @@ export default function SettingsPage() {
 
   // Products without supplier
   const [unassignedProducts, setUnassignedProducts] = useState<ProductStatus[]>([])
+  const [selectedProducts, setSelectedProducts] = useState<Set<number>>(new Set())
+  const [bulkSupplierId, setBulkSupplierId] = useState<string>('')
+  const [bulkAssigning, setBulkAssigning] = useState(false)
 
   function loadData() {
     setLoading(true)
@@ -244,14 +247,39 @@ export default function SettingsPage() {
     }
   }
 
-  // Assign supplier to product
-  async function assignSupplier(productId: number, supplierId: number | null) {
-    await fetch('/api/products', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: productId, supplier_id: supplierId }),
+  // Bulk assign supplier to products
+  async function bulkAssignSupplier() {
+    if (selectedProducts.size === 0 || !bulkSupplierId) return
+    setBulkAssigning(true)
+    try {
+      await fetch('/api/products', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedProducts), supplier_id: parseInt(bulkSupplierId) }),
+      })
+      setSelectedProducts(new Set())
+      setBulkSupplierId('')
+      loadData()
+    } finally {
+      setBulkAssigning(false)
+    }
+  }
+
+  function toggleProduct(id: number) {
+    setSelectedProducts(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
     })
-    loadData()
+  }
+
+  function toggleAllProducts() {
+    if (selectedProducts.size === unassignedProducts.length) {
+      setSelectedProducts(new Set())
+    } else {
+      setSelectedProducts(new Set(unassignedProducts.map(p => p.productId)))
+    }
   }
 
   const inputClass = 'w-full text-[13px] px-3 py-2 rounded-lg bg-surface-0 border border-border-subtle text-text-primary outline-none focus:border-accent transition-colors'
@@ -499,25 +527,64 @@ export default function SettingsPage() {
                   Product-fabrikant koppeling
                   <span className="text-text-tertiary font-normal ml-2">({unassignedProducts.length} zonder fabrikant)</span>
                 </h2>
+
+                {/* Bulk assign bar */}
+                <div className="flex items-center gap-3 mb-3 p-3 rounded-xl bg-surface-0 border border-border-subtle">
+                  <span className="text-[12px] text-text-secondary">
+                    {selectedProducts.size > 0
+                      ? `${selectedProducts.size} geselecteerd`
+                      : 'Selecteer producten'}
+                  </span>
+                  <div className="flex-1" />
+                  <select
+                    className={`${inputClass} !w-48`}
+                    value={bulkSupplierId}
+                    onChange={e => setBulkSupplierId(e.target.value)}
+                  >
+                    <option value="">Kies fabrikant...</option>
+                    {suppliers.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={bulkAssignSupplier}
+                    disabled={selectedProducts.size === 0 || !bulkSupplierId || bulkAssigning}
+                    className={primaryBtn}
+                  >
+                    {bulkAssigning ? 'Koppelen...' : 'Koppelen'}
+                  </button>
+                </div>
+
+                {/* Select all */}
+                <div className="flex items-center gap-2 mb-2 px-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedProducts.size === unassignedProducts.length && unassignedProducts.length > 0}
+                    onChange={toggleAllProducts}
+                    className="w-3.5 h-3.5 accent-accent cursor-pointer"
+                  />
+                  <span className="text-[11px] text-text-tertiary font-semibold uppercase tracking-wider">Alles selecteren</span>
+                </div>
+
                 <div className="space-y-1">
                   {unassignedProducts.map(p => (
-                    <div key={p.productId} className="flex items-center gap-3 p-2 rounded-lg bg-surface-0 border border-border-subtle">
+                    <label
+                      key={p.productId}
+                      className={`flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-colors ${
+                        selectedProducts.has(p.productId)
+                          ? 'bg-accent-subtle border-accent/20'
+                          : 'bg-surface-0 border-border-subtle hover:bg-surface-hover'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedProducts.has(p.productId)}
+                        onChange={() => toggleProduct(p.productId)}
+                        className="w-3.5 h-3.5 accent-accent cursor-pointer"
+                      />
                       <span className="text-text-tertiary font-mono text-[11px] w-20">{p.sku}</span>
                       <span className="text-text-primary text-[13px] flex-1">{p.name}</span>
-                      <select
-                        className={`${inputClass} !w-48`}
-                        value=""
-                        onChange={e => {
-                          const val = e.target.value
-                          if (val) assignSupplier(p.productId, parseInt(val))
-                        }}
-                      >
-                        <option value="">Kies fabrikant...</option>
-                        {suppliers.map(s => (
-                          <option key={s.id} value={s.id}>{s.name}</option>
-                        ))}
-                      </select>
-                    </div>
+                    </label>
                   ))}
                 </div>
               </div>
