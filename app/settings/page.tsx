@@ -205,10 +205,14 @@ export default function SettingsPage() {
         body: JSON.stringify({ action: 'historical' }),
       })
       const data = await res.json()
-      setSyncMsg(data.message || 'Historische import gestart')
+      if (data.success) {
+        setSyncMsg(`Import voltooid: ${data.ordersProcessed || 0} verkoopregels verwerkt`)
+      } else {
+        setSyncMsg(`Fout: ${data.error || 'onbekend'} — zie Logs voor details`)
+      }
       loadData()
-    } catch {
-      setSyncMsg('Fout bij historische import')
+    } catch (e) {
+      setSyncMsg(`Fout bij historische import: ${e instanceof Error ? e.message : 'onbekend'} — zie Logs`)
     } finally {
       setHistoricalSyncing(false)
     }

@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { href: '/suppliers', label: 'Fabrikanten' },
   { href: '/events', label: 'Events' },
   { href: '/settings', label: 'Instellingen' },
+  { href: '/logs', label: 'Logs' },
 ]
 
 export default function Nav({ lastSyncAt, lastSyncStatus, onSync, syncing }: NavProps) {
