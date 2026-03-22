@@ -19,6 +19,13 @@ export default function SettingsPage() {
   const [wooMsg, setWooMsg] = useState('')
   const [wooExpanded, setWooExpanded] = useState(false)
 
+  // Claude AI settings
+  const [claudeApiKey, setClaudeApiKey] = useState('')
+  const [hasClaudeKey, setHasClaudeKey] = useState(false)
+  const [claudeSaving, setClaudeSaving] = useState(false)
+  const [claudeMsg, setClaudeMsg] = useState('')
+  const [claudeExpanded, setClaudeExpanded] = useState(false)
+
   // Stock settings
   const [warehouseInboundDays, setWarehouseInboundDays] = useState('14')
   const [safetyMarginDays, setSafetyMarginDays] = useState('7')
@@ -39,6 +46,7 @@ export default function SettingsPage() {
       setWooUrl(settings.woo_url || '')
       setWooConsumerKey(settings.woo_consumer_key || '')
       setHasWooSecret(settings.has_woo_consumer_secret === '1')
+      setHasClaudeKey(settings.has_claude_api_key === '1')
       setWarehouseInboundDays(settings.warehouse_inbound_days || '14')
       setSafetyMarginDays(settings.safety_margin_days || '7')
     }).finally(() => setLoading(false))
@@ -82,6 +90,26 @@ export default function SettingsPage() {
       setTimeout(() => setWooMsg(''), 3000)
     } finally {
       setWooSaving(false)
+    }
+  }
+
+  async function saveClaudeSettings() {
+    setClaudeSaving(true)
+    setClaudeMsg('')
+    try {
+      if (claudeApiKey) {
+        await fetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: 'claude_api_key', value: claudeApiKey }),
+        })
+        setHasClaudeKey(true)
+        setClaudeApiKey('')
+        setClaudeMsg('Opgeslagen')
+        setTimeout(() => setClaudeMsg(''), 3000)
+      }
+    } finally {
+      setClaudeSaving(false)
     }
   }
 
@@ -244,6 +272,50 @@ export default function SettingsPage() {
                       {syncing ? 'Testen...' : 'Test verbinding'}
                     </button>
                     {wooMsg && <span className="text-success text-[12px]">{wooMsg}</span>}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Claude AI */}
+            <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-[14px] font-semibold text-text-primary">Claude AI</h2>
+                  <span className={`w-2.5 h-2.5 rounded-full ${hasClaudeKey ? 'bg-success' : 'bg-danger'} shrink-0`} title={
+                    hasClaudeKey ? 'API key geconfigureerd' : 'Geen API key'
+                  } />
+                </div>
+                <button
+                  onClick={() => setClaudeExpanded(!claudeExpanded)}
+                  className={secondaryBtn}
+                >
+                  {claudeExpanded ? 'Sluiten' : 'Wijzigen'}
+                </button>
+              </div>
+              {claudeExpanded && (
+                <div className="mt-4">
+                  <div className="mb-3">
+                    <label className={labelClass}>API Key</label>
+                    <input
+                      type="password"
+                      className={inputClass}
+                      value={claudeApiKey}
+                      onChange={e => setClaudeApiKey(e.target.value)}
+                      placeholder={hasClaudeKey ? 'Bewaard (typ om te wijzigen)' : 'sk-ant-...'}
+                    />
+                    {hasClaudeKey && !claudeApiKey && (
+                      <span className="text-success text-[12px] mt-0.5 block">Bewaard</span>
+                    )}
+                  </div>
+                  <p className="text-text-tertiary text-[12px] mb-3">
+                    Wordt gebruikt om automatisch evenementdatums op te zoeken. Haal een key op via console.anthropic.com.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button className={primaryBtn} disabled={claudeSaving || !claudeApiKey} onClick={saveClaudeSettings}>
+                      {claudeSaving ? 'Opslaan...' : 'Opslaan'}
+                    </button>
+                    {claudeMsg && <span className="text-success text-[12px]">{claudeMsg}</span>}
                   </div>
                 </div>
               )}

@@ -3,7 +3,7 @@ import { requireAuth } from '@/lib/auth-guard'
 import { getDb } from '@/lib/db'
 
 const SECRET_KEYS = ['auth_password_hash', 'auth_session_token']
-const READ_SECRET_KEYS = ['auth_password_hash', 'auth_session_token', 'woo_consumer_secret']
+const READ_SECRET_KEYS = ['auth_password_hash', 'auth_session_token', 'woo_consumer_secret', 'claude_api_key']
 
 export async function GET(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
@@ -13,15 +13,20 @@ export async function GET(req: NextRequest) {
 
   const settings: Record<string, string> = {}
   let hasWooConsumerSecret = false
+  let hasClaudeApiKey = false
   for (const row of rows) {
     if (row.key === 'woo_consumer_secret' && row.value) {
       hasWooConsumerSecret = true
+    }
+    if (row.key === 'claude_api_key' && row.value) {
+      hasClaudeApiKey = true
     }
     if (!READ_SECRET_KEYS.includes(row.key)) {
       settings[row.key] = row.value
     }
   }
   settings.has_woo_consumer_secret = hasWooConsumerSecret ? '1' : '0'
+  settings.has_claude_api_key = hasClaudeApiKey ? '1' : '0'
   return NextResponse.json({ settings })
 }
 
