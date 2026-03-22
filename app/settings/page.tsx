@@ -621,17 +621,14 @@ export default function SettingsPage() {
 
                 <div className="space-y-1">
                   {unassignedProducts.map((p, i) => (
-                    <label
+                    <div
                       key={p.productId}
                       className={`flex items-center gap-3 p-2 rounded-lg border cursor-pointer transition-colors select-none ${
                         selectedProducts.has(p.productId)
                           ? 'bg-accent-subtle border-accent/20'
                           : 'bg-surface-0 border-border-subtle hover:bg-surface-hover'
                       }`}
-                      onClick={e => {
-                        e.preventDefault()
-                        toggleProduct(i, e.shiftKey)
-                      }}
+                      onClick={e => toggleProduct(i, e.shiftKey)}
                     >
                       <input
                         type="checkbox"
@@ -641,7 +638,7 @@ export default function SettingsPage() {
                       />
                       <span className="text-text-tertiary font-mono text-[11px] w-20">{p.sku}</span>
                       <span className="text-text-primary text-[13px] flex-1">{p.name}</span>
-                    </label>
+                    </div>
                   ))}
                 </div>
               </div>
