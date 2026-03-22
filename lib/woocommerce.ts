@@ -6,6 +6,7 @@ interface WooProduct {
   name: string
   sku: string
   stock_quantity: number | null
+  manage_stock: boolean
   price: string
   status: string
   type?: string
@@ -15,6 +16,7 @@ interface WooVariation {
   id: number
   sku: string
   stock_quantity: number | null
+  manage_stock: boolean
   price: string
   status: string
   attributes: { name: string; option: string }[]
@@ -84,11 +86,14 @@ export async function fetchAllProducts(): Promise<WooProduct[]> {
       for (const v of variations) {
         if (!v.sku) continue
         const attrStr = v.attributes.map(a => a.option).join(' / ')
+        // If variation doesn't manage its own stock, inherit from parent
+        const stock = v.manage_stock ? v.stock_quantity : (p.stock_quantity ?? v.stock_quantity)
         allProducts.push({
           id: v.id,
           name: attrStr ? `${p.name} — ${attrStr}` : p.name,
           sku: v.sku,
-          stock_quantity: v.stock_quantity,
+          stock_quantity: stock,
+          manage_stock: v.manage_stock || p.manage_stock,
           price: v.price,
           status: v.status,
         })
