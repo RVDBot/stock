@@ -68,16 +68,40 @@ export async function syncProducts() {
     }
   }
 
+  // Also handle SKU changes: update existing product by woo_product_id if SKU changed
+  const updateByWooId = db.prepare(`
+    UPDATE products SET sku = ?, name = ?, current_stock = ?, price = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE woo_product_id = ?
+  `)
+
   let synced = 0
+  const syncedWooIds = new Set<number>()
   db.transaction(() => {
     for (const p of skuMap.values()) {
       const stock = p.stock_quantity ?? 0
       const price = parseFloat(p.price) || 0
-      upsertProduct.run(p.id, p.sku, p.name, stock, price, p.id, p.name, stock, price)
+
+      // Check if this woo_product_id already exists with a different SKU
+      const existingByWooId = db.prepare('SELECT id, sku FROM products WHERE woo_product_id = ?').get(p.id) as { id: number; sku: string } | undefined
+      if (existingByWooId && existingByWooId.sku !== p.sku) {
+        // SKU changed in WooCommerce — update existing record
+        log('info', `SKU gewijzigd: "${existingByWooId.sku}" → "${p.sku}" (woo_id=${p.id})`)
+        updateByWooId.run(p.sku, p.name, stock, price, p.id)
+      } else {
+        upsertProduct.run(p.id, p.sku, p.name, stock, price, p.id, p.name, stock, price)
+      }
 
       const row = db.prepare('SELECT id FROM products WHERE sku = ?').get(p.sku) as { id: number }
       upsertSnapshot.run(row.id, today, stock, stock)
+      syncedWooIds.add(p.id)
       synced++
+    }
+
+    // Remove products that no longer exist in WooCommerce
+    const removed = db.prepare('DELETE FROM products WHERE woo_product_id NOT IN (SELECT value FROM json_each(?)) AND active = 1')
+      .run(JSON.stringify([...syncedWooIds]))
+    if (removed.changes > 0) {
+      log('info', `Sync: ${removed.changes} verwijderde producten opgeruimd`)
     }
   })()
 
