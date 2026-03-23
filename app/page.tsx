@@ -150,6 +150,9 @@ export default function AlertsPage() {
             placeholder="Zoek op SKU, naam of fabrikant..."
             className="w-full text-[13px] px-3 py-2 rounded-lg bg-surface-1 border border-border-subtle text-text-primary outline-none focus:border-accent transition-colors"
           />
+          {search && (
+            <p className="text-text-tertiary text-[12px] mt-1.5">{alerts.length} resultaten</p>
+          )}
         </div>
 
         {loading ? (
