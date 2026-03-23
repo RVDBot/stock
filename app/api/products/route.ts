@@ -6,8 +6,24 @@ import { getAllProductStatuses, getProductStatusesBySupplier } from '@/lib/stock
 export async function GET(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
 
+  const productId = req.nextUrl.searchParams.get('id')
   const supplierId = req.nextUrl.searchParams.get('supplier_id')
   const inactive = req.nextUrl.searchParams.get('inactive')
+
+  // Return single product with specs
+  if (productId) {
+    const db = getDb()
+    const product = db.prepare(`
+      SELECT p.*, s.name as supplier_name, s.lead_time_days,
+             st.name as template_name, st.fields as template_fields
+      FROM products p
+      LEFT JOIN suppliers s ON p.supplier_id = s.id
+      LEFT JOIN spec_templates st ON p.spec_template_id = st.id
+      WHERE p.id = ?
+    `).get(parseInt(productId, 10))
+    if (!product) return NextResponse.json({ error: 'Niet gevonden' }, { status: 404 })
+    return NextResponse.json(product)
+  }
 
   // Return inactive (ignored) products
   if (inactive === '1') {
@@ -56,9 +72,31 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ success: true, updated: body.ids.length })
   }
 
-  // Single assign: { id: 1, supplier_id: 5 }
+  // Single product update: { id, supplier_id?, spec_template_id?, specs? }
   if (!body.id) {
     return NextResponse.json({ error: 'Product id is verplicht' }, { status: 400 })
+  }
+
+  if (body.specs !== undefined || body.spec_template_id !== undefined) {
+    const updates: string[] = []
+    const params: (string | number | null)[] = []
+
+    if (body.spec_template_id !== undefined) {
+      updates.push('spec_template_id = ?')
+      params.push(body.spec_template_id)
+    }
+    if (body.specs !== undefined) {
+      updates.push('specs = ?')
+      params.push(JSON.stringify(body.specs))
+    }
+    if (body.supplier_id !== undefined) {
+      updates.push('supplier_id = ?')
+      params.push(body.supplier_id)
+    }
+
+    params.push(body.id)
+    db.prepare(`UPDATE products SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+    return NextResponse.json({ success: true })
   }
 
   const result = db.prepare('UPDATE products SET supplier_id = ? WHERE id = ?').run(body.supplier_id, body.id)

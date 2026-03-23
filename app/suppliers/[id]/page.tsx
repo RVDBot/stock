@@ -80,6 +80,21 @@ const PREFERRED_CONTACT_OPTIONS = [
   { value: 'whatsapp', label: 'WhatsApp' },
 ]
 
+interface TemplateField {
+  name: string
+  type: 'text' | 'number' | 'select'
+  unit?: string
+  options?: string[]
+  shared: boolean
+}
+
+interface SpecTemplate {
+  id: number
+  supplier_id: number
+  name: string
+  fields: string
+}
+
 export default function SupplierDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
 
@@ -114,10 +129,18 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   const [orderArrival, setOrderArrival] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [activeTab, setActiveTab] = useState<'products' | 'orderlist'>('products')
+  const [activeTab, setActiveTab] = useState<'products' | 'orderlist' | 'templates'>('products')
   const [orderList, setOrderList] = useState<OrderListProduct[]>([])
   const [orderListCoverageDays, setOrderListCoverageDays] = useState(0)
   const [orderListLoading, setOrderListLoading] = useState(false)
+
+  // Templates
+  const [specTemplates, setSpecTemplates] = useState<SpecTemplate[]>([])
+  const [showTemplateForm, setShowTemplateForm] = useState(false)
+  const [editingTemplate, setEditingTemplate] = useState<SpecTemplate | null>(null)
+  const [templateName, setTemplateName] = useState('')
+  const [templateFields, setTemplateFields] = useState<TemplateField[]>([])
+  const [templateSaving, setTemplateSaving] = useState(false)
 
   function loadData() {
     setLoading(true)
@@ -126,7 +149,9 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
       fetch(`/api/products?supplier_id=${id}`).then(r => r.json()),
       fetch(`/api/purchase-orders?supplier_id=${id}`).then(r => r.json()),
       fetch('/api/settings').then(r => r.json()),
-    ]).then(([supplierData, productsData, ordersData, settData]) => {
+      fetch(`/api/spec-templates?supplier_id=${id}`).then(r => r.json()),
+    ]).then(([supplierData, productsData, ordersData, settData, templatesData]) => {
+      setSpecTemplates(Array.isArray(templatesData) ? templatesData : [])
       const sup = supplierData.error ? null : supplierData as Supplier
       setSupplier(sup)
       if (sup) {
@@ -265,6 +290,71 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })
+  }
+
+  function startNewTemplate() {
+    setEditingTemplate(null)
+    setTemplateName('')
+    setTemplateFields([{ name: '', type: 'text', shared: true }])
+    setShowTemplateForm(true)
+  }
+
+  function startEditTemplate(template: SpecTemplate) {
+    setEditingTemplate(template)
+    setTemplateName(template.name)
+    try {
+      setTemplateFields(JSON.parse(template.fields))
+    } catch {
+      setTemplateFields([])
+    }
+    setShowTemplateForm(true)
+  }
+
+  function addField() {
+    setTemplateFields(f => [...f, { name: '', type: 'text', shared: true }])
+  }
+
+  function updateField(index: number, updates: Partial<TemplateField>) {
+    setTemplateFields(f => f.map((field, i) => i === index ? { ...field, ...updates } : field))
+  }
+
+  function removeField(index: number) {
+    setTemplateFields(f => f.filter((_, i) => i !== index))
+  }
+
+  async function handleSaveTemplate() {
+    if (!templateName.trim()) return
+    const cleanFields = templateFields.filter(f => f.name.trim())
+    setTemplateSaving(true)
+    try {
+      if (editingTemplate) {
+        await fetch('/api/spec-templates', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: editingTemplate.id, name: templateName.trim(), fields: cleanFields }),
+        })
+      } else {
+        await fetch('/api/spec-templates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ supplier_id: parseInt(id, 10), name: templateName.trim(), fields: cleanFields }),
+        })
+      }
+      setShowTemplateForm(false)
+      loadData()
+    } finally {
+      setTemplateSaving(false)
+    }
+  }
+
+  async function handleDeleteTemplate(templateId: number) {
+    if (!confirm('Template verwijderen? Producten worden losgekoppeld van dit template.')) return
+    await fetch('/api/spec-templates', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: templateId }),
+    })
+    loadData()
   }
 
   const adminBase = wooUrl ? `${wooUrl.replace(/\/$/, '')}/wp-admin/post.php` : ''
@@ -557,6 +647,27 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
               </div>
             )}
 
+            {/* Tab buttons */}
+            <div className="flex gap-1 mb-4">
+              {([
+                { key: 'products' as const, label: `Producten (${products.length})` },
+                { key: 'orderlist' as const, label: 'Bestellijst' },
+                { key: 'templates' as const, label: `Templates (${specTemplates.length})` },
+              ]).map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`text-[13px] font-medium px-4 py-2 rounded-xl transition-colors ${
+                    activeTab === tab.key
+                      ? 'bg-accent text-white'
+                      : 'bg-surface-2 text-text-secondary hover:text-text-primary hover:bg-surface-3'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
             {/* Product overview */}
             {activeTab === 'products' && (
               <div className="mb-4">
@@ -710,6 +821,181 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                       </div>
                     )}
                   </>
+                )}
+              </div>
+            )}
+
+            {/* Templates tab */}
+            {activeTab === 'templates' && (
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-[14px] font-semibold text-text-primary">Specificatie templates</h2>
+                  {!showTemplateForm && (
+                    <button
+                      onClick={startNewTemplate}
+                      className="text-[12px] font-medium px-4 py-1.5 rounded-lg bg-accent text-white hover:bg-accent-hover transition-all duration-150"
+                    >
+                      + Template toevoegen
+                    </button>
+                  )}
+                </div>
+
+                {/* Template form */}
+                {showTemplateForm && (
+                  <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5 mb-3 animate-row">
+                    <h3 className="text-[13px] font-semibold text-text-primary mb-3">
+                      {editingTemplate ? 'Template bewerken' : 'Nieuw template'}
+                    </h3>
+                    <div className="mb-3">
+                      <label className="text-[11px] text-text-tertiary font-semibold uppercase tracking-wider block mb-1">Template naam</label>
+                      <input
+                        type="text"
+                        value={templateName}
+                        onChange={e => setTemplateName(e.target.value)}
+                        className="w-full max-w-xs text-[13px] px-3 py-2 rounded-lg bg-surface-0 border border-border-subtle text-text-primary outline-none focus:border-accent transition-colors"
+                        placeholder="Bijv. Kabel, Handvat"
+                      />
+                    </div>
+
+                    <label className="text-[11px] text-text-tertiary font-semibold uppercase tracking-wider block mb-2">Velden</label>
+                    <div className="space-y-2 mb-3">
+                      {templateFields.map((field, i) => (
+                        <div key={i} className="flex items-center gap-2 p-2 rounded-lg bg-surface-0 border border-border-subtle">
+                          <input
+                            type="text"
+                            value={field.name}
+                            onChange={e => updateField(i, { name: e.target.value })}
+                            className="flex-1 text-[13px] px-2 py-1.5 rounded-md bg-surface-1 border border-border-subtle text-text-primary outline-none focus:border-accent"
+                            placeholder="Veldnaam"
+                          />
+                          <select
+                            value={field.type}
+                            onChange={e => updateField(i, { type: e.target.value as TemplateField['type'] })}
+                            className="text-[12px] px-2 py-1.5 rounded-md bg-surface-1 border border-border-subtle text-text-primary w-24"
+                          >
+                            <option value="text">Tekst</option>
+                            <option value="number">Getal</option>
+                            <option value="select">Dropdown</option>
+                          </select>
+                          {field.type === 'number' && (
+                            <input
+                              type="text"
+                              value={field.unit || ''}
+                              onChange={e => updateField(i, { unit: e.target.value })}
+                              className="w-16 text-[12px] px-2 py-1.5 rounded-md bg-surface-1 border border-border-subtle text-text-primary outline-none"
+                              placeholder="Eenheid"
+                            />
+                          )}
+                          {field.type === 'select' && (
+                            <input
+                              type="text"
+                              value={(field.options || []).join(', ')}
+                              onChange={e => updateField(i, { options: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+                              className="flex-1 text-[12px] px-2 py-1.5 rounded-md bg-surface-1 border border-border-subtle text-text-primary outline-none"
+                              placeholder="Opties (komma-gescheiden)"
+                            />
+                          )}
+                          <label className="flex items-center gap-1 cursor-pointer whitespace-nowrap">
+                            <input
+                              type="checkbox"
+                              checked={field.shared}
+                              onChange={e => updateField(i, { shared: e.target.checked })}
+                              className="w-3.5 h-3.5 accent-accent"
+                            />
+                            <span className="text-[11px] text-text-secondary">Fabrikant</span>
+                          </label>
+                          <button
+                            onClick={() => removeField(i)}
+                            className="text-danger hover:bg-danger/10 text-[12px] px-2 py-1 rounded-md transition-colors"
+                          >
+                            &times;
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    <button
+                      onClick={addField}
+                      className="text-[12px] font-medium px-3 py-1.5 rounded-lg bg-surface-2 border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-surface-3 transition-all duration-150 mb-4"
+                    >
+                      + Veld toevoegen
+                    </button>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleSaveTemplate}
+                        disabled={templateSaving || !templateName.trim()}
+                        className="text-[12px] font-medium px-4 py-2 rounded-lg bg-accent text-white hover:bg-accent-hover disabled:opacity-40 transition-all duration-150"
+                      >
+                        {templateSaving ? 'Opslaan...' : 'Opslaan'}
+                      </button>
+                      <button
+                        onClick={() => setShowTemplateForm(false)}
+                        className="text-[12px] font-medium px-3 py-2 rounded-lg bg-surface-2 border border-border-subtle text-text-secondary hover:text-text-primary transition-all duration-150"
+                      >
+                        Annuleren
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Template list */}
+                {specTemplates.length === 0 && !showTemplateForm ? (
+                  <div className="bg-surface-1 rounded-2xl border border-border-subtle p-12 text-center">
+                    <p className="text-text-tertiary text-[13px] mb-2">Nog geen templates aangemaakt.</p>
+                    <p className="text-text-tertiary text-[12px]">Templates bepalen welke specificatievelden producten van deze fabrikant hebben.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {specTemplates.map(template => {
+                      let fields: TemplateField[] = []
+                      try { fields = JSON.parse(template.fields) } catch { /* empty */ }
+                      const sharedCount = fields.filter(f => f.shared).length
+                      const internalCount = fields.length - sharedCount
+
+                      return (
+                        <div key={template.id} className="bg-surface-1 rounded-2xl border border-border-subtle p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <span className="text-text-primary text-[14px] font-semibold">{template.name}</span>
+                              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                {fields.map(f => (
+                                  <span
+                                    key={f.name}
+                                    className={`text-[11px] px-2 py-0.5 rounded-md border ${
+                                      f.shared
+                                        ? 'bg-accent/10 text-accent border-accent/20'
+                                        : 'bg-surface-2 text-text-tertiary border-border-subtle'
+                                    }`}
+                                  >
+                                    {f.name}
+                                    {!f.shared && ' (intern)'}
+                                  </span>
+                                ))}
+                              </div>
+                              <p className="text-[11px] text-text-tertiary mt-1">
+                                {fields.length} velden ({sharedCount} voor fabrikant{internalCount > 0 ? `, ${internalCount} intern` : ''})
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                onClick={() => startEditTemplate(template)}
+                                className="text-[12px] font-medium px-3 py-1.5 rounded-lg bg-surface-2 border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-surface-3 transition-all duration-150"
+                              >
+                                Bewerken
+                              </button>
+                              <button
+                                onClick={() => handleDeleteTemplate(template.id)}
+                                className="text-[12px] font-medium px-3 py-1.5 rounded-lg text-danger hover:bg-danger/10 transition-all duration-150"
+                              >
+                                Verwijder
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
                 )}
               </div>
             )}

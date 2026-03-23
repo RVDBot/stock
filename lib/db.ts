@@ -127,6 +127,27 @@ function initSchema(db: Database.Database) {
     }
   }
 
+  // Spec templates table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS spec_templates (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+      name        TEXT NOT NULL,
+      fields      TEXT NOT NULL DEFAULT '[]',
+      created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `)
+
+  // Add specs columns to products
+  const productCols = db.prepare("PRAGMA table_info(products)").all() as { name: string }[]
+  const productColNames = new Set(productCols.map(c => c.name))
+  if (!productColNames.has('spec_template_id')) {
+    db.exec(`
+      ALTER TABLE products ADD COLUMN spec_template_id INTEGER REFERENCES spec_templates(id);
+      ALTER TABLE products ADD COLUMN specs TEXT NOT NULL DEFAULT '{}';
+    `)
+  }
+
   // Supplier order_cycle_days migration
   if (!colNames.has('order_cycle_days')) {
     db.exec(`ALTER TABLE suppliers ADD COLUMN order_cycle_days INTEGER NOT NULL DEFAULT 30;`)

@@ -342,6 +342,14 @@ export default function ProductsPage() {
                     )}
                   </span>
                   <span className="w-20 text-right text-[13px] tabular-nums font-medium text-text-primary">{formatNumber(p.currentStock)}</span>
+                  <a
+                    href={`/products/${p.productId}`}
+                    className="text-text-tertiary hover:text-accent text-[12px] shrink-0 transition-colors"
+                    onClick={e => e.stopPropagation()}
+                    onMouseDown={e => e.stopPropagation()}
+                  >
+                    &rarr;
+                  </a>
                 </div>
               ))}
             </div>
