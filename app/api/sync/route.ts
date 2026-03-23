@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-guard'
 import { runDailySync, importHistoricalOrders, analyzeHistoricalPeaks } from '@/lib/sync'
 import { log } from '@/lib/logger'
+import { getDb } from '@/lib/db'
+
+function setSetting(key: string, value: string) {
+  const db = getDb()
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?').run(key, value, value)
+}
 
 export async function POST(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
@@ -9,7 +15,7 @@ export async function POST(req: NextRequest) {
 
   if (action === 'daily') {
     try {
-      await runDailySync()
+      await runDailySync('manual')
       return NextResponse.json({ success: true })
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -21,8 +27,11 @@ export async function POST(req: NextRequest) {
 
   if (action === 'historical') {
     try {
+      setSetting('last_sync_type', 'historical')
       const count = await importHistoricalOrders()
       const peaks = analyzeHistoricalPeaks()
+      setSetting('last_sync_at', new Date().toISOString())
+      setSetting('last_sync_status', 'success')
       return NextResponse.json({ success: true, ordersProcessed: count, peaks })
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)

@@ -6,6 +6,6 @@ export async function POST(req: NextRequest) {
   if (!secret || secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  await runDailySync()
+  await runDailySync('automated')
   return NextResponse.json({ ok: true })
 }

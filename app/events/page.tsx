@@ -5,6 +5,7 @@ import Nav from '@/components/Nav'
 
 interface Event {
   id: number
+  parent_id: number | null
   name: string
   expected_date: string | null
   duration_days: number
@@ -37,6 +38,12 @@ interface EventForm {
   notes: string
 }
 
+interface SubEventForm {
+  name: string
+  expected_date: string
+  duration_days: string
+}
+
 const EMPTY_FORM: EventForm = {
   name: '',
   expected_date: '',
@@ -47,6 +54,8 @@ const EMPTY_FORM: EventForm = {
   ai_skip_months: '6',
   notes: '',
 }
+
+const EMPTY_SUB: SubEventForm = { name: '', expected_date: '', duration_days: '7' }
 
 function formatNumber(n: number): string {
   return n.toLocaleString('nl-NL')
@@ -72,6 +81,7 @@ export default function EventsPage() {
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState<EventForm>(EMPTY_FORM)
+  const [newSubs, setNewSubs] = useState<SubEventForm[]>([])
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState<number | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
@@ -81,6 +91,28 @@ export default function EventsPage() {
   const [peaks, setPeaks] = useState<Record<string, Peak[]>>({})
   const [peaksLoading, setPeaksLoading] = useState(true)
   const formRef = useRef<HTMLDivElement>(null)
+
+  // Computed: parent events and sub-events map
+  const parentEvents = useMemo(() => events.filter(e => e.parent_id === null), [events])
+  const subEventsMap = useMemo(() => {
+    const map = new Map<number, Event[]>()
+    for (const e of events) {
+      if (e.parent_id !== null) {
+        const list = map.get(e.parent_id) || []
+        list.push(e)
+        map.set(e.parent_id, list)
+      }
+    }
+    // Sort subs by date
+    for (const [, list] of map) {
+      list.sort((a, b) => {
+        if (!a.expected_date) return 1
+        if (!b.expected_date) return -1
+        return a.expected_date.localeCompare(b.expected_date)
+      })
+    }
+    return map
+  }, [events])
 
   function loadData() {
     setLoading(true)
@@ -121,6 +153,7 @@ export default function EventsPage() {
   function createEventFromPeak(peak: Peak) {
     setShowForm(true)
     setEditingId(null)
+    setNewSubs([])
     setForm({
       name: '',
       expected_date: peak.weekStart,
@@ -142,32 +175,70 @@ export default function EventsPage() {
     const past: Event[] = []
     const noDate: Event[] = []
 
-    for (const e of events) {
-      if (!e.expected_date) {
+    for (const e of parentEvents) {
+      const subs = subEventsMap.get(e.id) || []
+      // Use earliest sub-event date or parent date for sorting
+      const dates = [e.expected_date, ...subs.map(s => s.expected_date)].filter(Boolean) as string[]
+      const nextDate = dates.sort()[0]
+
+      if (!nextDate) {
         noDate.push(e)
-      } else if (new Date(e.expected_date) >= now) {
+      } else if (new Date(nextDate) >= now) {
         upcoming.push(e)
       } else {
         past.push(e)
       }
     }
 
-    upcoming.sort((a, b) => new Date(a.expected_date!).getTime() - new Date(b.expected_date!).getTime())
-    past.sort((a, b) => new Date(b.expected_date!).getTime() - new Date(a.expected_date!).getTime())
+    upcoming.sort((a, b) => {
+      const aDate = getEarliestDate(a.id, a.expected_date)
+      const bDate = getEarliestDate(b.id, b.expected_date)
+      if (!aDate) return 1
+      if (!bDate) return -1
+      return aDate.localeCompare(bDate)
+    })
+    past.sort((a, b) => {
+      const aDate = getEarliestDate(a.id, a.expected_date)
+      const bDate = getEarliestDate(b.id, b.expected_date)
+      if (!aDate) return 1
+      if (!bDate) return -1
+      return bDate.localeCompare(aDate)
+    })
 
     return [...upcoming, ...past, ...noDate]
-  }, [events])
+  }, [parentEvents, subEventsMap])
+
+  function getEarliestDate(parentId: number, parentDate: string | null): string | null {
+    const subs = subEventsMap.get(parentId) || []
+    const dates = [parentDate, ...subs.map(s => s.expected_date)].filter(Boolean) as string[]
+    return dates.sort()[0] || null
+  }
 
   const displayEvents = useMemo(() => {
     if (!filterAttention) return sortedEvents
-    return sortedEvents.filter(needsAttention)
-  }, [sortedEvents, filterAttention])
+    return sortedEvents.filter(e => {
+      if (needsAttention(e)) return true
+      const subs = subEventsMap.get(e.id) || []
+      return subs.some(needsAttention)
+    })
+  }, [sortedEvents, filterAttention, subEventsMap])
 
-  const attentionCount = useMemo(() => events.filter(needsAttention).length, [events])
+  const attentionCount = useMemo(() => {
+    let count = 0
+    for (const e of parentEvents) {
+      if (needsAttention(e)) count++
+      const subs = subEventsMap.get(e.id) || []
+      count += subs.filter(needsAttention).length
+    }
+    return count
+  }, [parentEvents, subEventsMap])
 
   function startEdit(event: Event) {
     setEditingId(event.id)
     setShowForm(false)
+    setConfirmDelete(null)
+    const subs = subEventsMap.get(event.id) || []
+    setNewSubs(subs.map(s => ({ name: s.name, expected_date: s.expected_date || '', duration_days: String(s.duration_days) })))
     setForm({
       name: event.name,
       expected_date: event.expected_date || '',
@@ -183,12 +254,15 @@ export default function EventsPage() {
   function cancelEdit() {
     setEditingId(null)
     setForm(EMPTY_FORM)
+    setNewSubs([])
+    setConfirmDelete(null)
   }
 
   function startAdd() {
     setShowForm(true)
     setEditingId(null)
     setForm(EMPTY_FORM)
+    setNewSubs([])
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -209,14 +283,50 @@ export default function EventsPage() {
     }
 
     try {
-      await fetch('/api/events', {
+      const res = await fetch('/api/events', {
         method: editingId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
+      const data = await res.json()
+      const parentId = editingId || data.id
+
+      // Handle sub-events
+      if (editingId) {
+        // Delete existing subs and recreate
+        const existingSubs = subEventsMap.get(editingId) || []
+        for (const sub of existingSubs) {
+          await fetch('/api/events', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: sub.id }),
+          })
+        }
+      }
+
+      // Create new subs
+      for (const sub of newSubs) {
+        if (!sub.name.trim()) continue
+        await fetch('/api/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            parent_id: parentId,
+            name: sub.name.trim(),
+            expected_date: sub.expected_date || null,
+            duration_days: parseInt(sub.duration_days) || 7,
+            impact_percentage: body.impact_percentage,
+            recurring: body.recurring,
+            ai_lookup: body.ai_lookup,
+            ai_skip_months: body.ai_skip_months,
+          }),
+        })
+      }
+
       setShowForm(false)
       setEditingId(null)
       setForm(EMPTY_FORM)
+      setNewSubs([])
       loadData()
     } finally {
       setSaving(false)
@@ -232,6 +342,9 @@ export default function EventsPage() {
         body: JSON.stringify({ id }),
       })
       setConfirmDelete(null)
+      setEditingId(null)
+      setForm(EMPTY_FORM)
+      setNewSubs([])
       loadData()
     } finally {
       setDeleting(null)
@@ -248,7 +361,7 @@ export default function EventsPage() {
       })
       const data = await res.json()
       if (!res.ok) {
-        alert(data.error || 'AI lookup mislukt')
+        alert(`Fout (${res.status}): ${data.error || 'AI lookup mislukt'}`)
       } else if (!data.date) {
         alert('Datum niet gevonden door AI')
       }
@@ -262,6 +375,18 @@ export default function EventsPage() {
 
   function handleCheckDates() {
     setFilterAttention(prev => !prev)
+  }
+
+  function addSubEvent() {
+    setNewSubs(s => [...s, { ...EMPTY_SUB }])
+  }
+
+  function updateSubEvent(index: number, field: keyof SubEventForm, value: string) {
+    setNewSubs(s => s.map((sub, i) => i === index ? { ...sub, [field]: value } : sub))
+  }
+
+  function removeSubEvent(index: number) {
+    setNewSubs(s => s.filter((_, i) => i !== index))
   }
 
   function renderForm(isInline = false) {
@@ -280,7 +405,7 @@ export default function EventsPage() {
               value={form.name}
               onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
               className="w-full bg-surface-0 border border-border rounded-xl px-3 py-2 text-[13px] text-text-primary outline-none focus:border-accent transition-colors"
-              placeholder="Bijv. Black Friday, Kerst, Zomervakantie"
+              placeholder="Bijv. CrossFit Games, Black Friday"
               required
             />
           </div>
@@ -292,6 +417,9 @@ export default function EventsPage() {
               onChange={e => setForm(f => ({ ...f, expected_date: e.target.value }))}
               className="w-full bg-surface-0 border border-border rounded-xl px-3 py-2 text-[13px] text-text-primary outline-none focus:border-accent transition-colors"
             />
+            {newSubs.length > 0 && (
+              <span className="text-text-tertiary text-[11px] mt-0.5 block">Optioneel als sub-events datums hebben</span>
+            )}
           </div>
           <div>
             <label className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider block mb-1">Duur (dagen)</label>
@@ -359,23 +487,161 @@ export default function EventsPage() {
             />
           </div>
         </div>
-        <div className="flex items-center gap-2 mt-4">
-          <button
-            type="submit"
-            disabled={saving || !form.name.trim()}
-            className="bg-accent hover:bg-accent-hover text-white text-[13px] font-medium px-4 py-2 rounded-xl transition-colors disabled:opacity-40"
-          >
-            {saving ? 'Opslaan...' : editingId ? 'Bijwerken' : 'Toevoegen'}
-          </button>
-          <button
-            type="button"
-            onClick={() => { setShowForm(false); cancelEdit() }}
-            className="bg-surface-2 hover:bg-surface-3 text-text-secondary text-[13px] font-medium px-4 py-2 rounded-xl transition-colors"
-          >
-            Annuleren
-          </button>
+
+        {/* Sub-events */}
+        <div className="mt-4 border-t border-border-subtle pt-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-text-primary text-[13px] font-semibold">Sub-events</h3>
+            <button
+              type="button"
+              onClick={addSubEvent}
+              className="text-accent hover:text-accent-hover text-[12px] font-medium transition-colors"
+            >
+              + Sub-event toevoegen
+            </button>
+          </div>
+          {newSubs.length === 0 ? (
+            <p className="text-text-tertiary text-[12px]">Geen sub-events. Voeg onderdelen toe zoals Open, Quarter Finals, Semi Finals, Finals.</p>
+          ) : (
+            <div className="space-y-2">
+              {newSubs.map((sub, i) => (
+                <div key={i} className="flex items-center gap-2 bg-surface-0 border border-border-subtle rounded-xl px-3 py-2">
+                  <input
+                    type="text"
+                    value={sub.name}
+                    onChange={e => updateSubEvent(i, 'name', e.target.value)}
+                    placeholder="Naam (bijv. Quarter Finals)"
+                    className="flex-1 bg-transparent text-[13px] text-text-primary outline-none min-w-0"
+                  />
+                  <input
+                    type="date"
+                    value={sub.expected_date}
+                    onChange={e => updateSubEvent(i, 'expected_date', e.target.value)}
+                    className="bg-transparent text-[13px] text-text-primary outline-none w-36"
+                  />
+                  <input
+                    type="number"
+                    min="1"
+                    value={sub.duration_days}
+                    onChange={e => updateSubEvent(i, 'duration_days', e.target.value)}
+                    className="bg-transparent text-[13px] text-text-primary outline-none w-16 text-center"
+                    title="Dagen"
+                  />
+                  <span className="text-text-tertiary text-[11px]">d</span>
+                  <button
+                    type="button"
+                    onClick={() => removeSubEvent(i)}
+                    className="text-danger hover:text-danger text-[14px] px-1 shrink-0"
+                  >
+                    &times;
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between mt-4">
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              disabled={saving || !form.name.trim()}
+              className="bg-accent hover:bg-accent-hover text-white text-[13px] font-medium px-4 py-2 rounded-xl transition-colors disabled:opacity-40"
+            >
+              {saving ? 'Opslaan...' : editingId ? 'Bijwerken' : 'Toevoegen'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowForm(false); cancelEdit() }}
+              className="bg-surface-2 hover:bg-surface-3 text-text-secondary text-[13px] font-medium px-4 py-2 rounded-xl transition-colors"
+            >
+              Annuleren
+            </button>
+          </div>
+          {editingId && (
+            confirmDelete === editingId ? (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleDelete(editingId)}
+                  disabled={deleting === editingId}
+                  className="text-danger hover:bg-danger/10 text-[12px] font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40"
+                >
+                  {deleting === editingId ? 'Verwijderen...' : 'Bevestig verwijderen'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(null)}
+                  className="text-text-tertiary hover:text-text-secondary text-[12px] font-medium px-2 py-1.5 rounded-lg transition-colors"
+                >
+                  Annuleer
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(editingId)}
+                className="text-danger hover:bg-danger/10 text-[12px] font-medium px-3 py-1.5 rounded-lg transition-colors"
+              >
+                Verwijderen
+              </button>
+            )
+          )}
         </div>
       </form>
+    )
+  }
+
+  function renderSubEvents(parentId: number) {
+    const subs = subEventsMap.get(parentId) || []
+    if (subs.length === 0) return null
+
+    return (
+      <div className="mt-2 ml-4 space-y-1.5">
+        {subs.map(sub => {
+          const subExpired = sub.expected_date && isExpired(sub.expected_date) && sub.recurring === 1
+          const subNoDate = !sub.expected_date
+
+          return (
+            <div key={sub.id} className="flex items-center justify-between gap-3 bg-surface-0 border border-border-subtle rounded-xl px-3 py-2">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <span className="text-text-secondary text-[13px] font-medium truncate">{sub.name}</span>
+                {subNoDate && (
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md border bg-warning/10 text-warning border-warning/20 shrink-0">
+                    Geen datum
+                  </span>
+                )}
+                {subExpired && (
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md border bg-warning/10 text-warning border-warning/20 shrink-0">
+                    Verlopen
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                {sub.expected_date ? (
+                  <span className="text-text-secondary text-[12px]">
+                    {new Date(sub.expected_date).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span>
+                ) : sub.last_checked_at ? (
+                  <span className="text-text-tertiary text-[11px]">
+                    Gecheckt {new Date(sub.last_checked_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })}
+                  </span>
+                ) : null}
+                <span className="text-text-tertiary text-[12px]">{sub.duration_days}d</span>
+                {sub.ai_lookup === 1 && (
+                  <button
+                    onClick={() => handleAiLookup(sub.id)}
+                    disabled={lookingUp === sub.id}
+                    className="bg-surface-2 hover:bg-surface-3 text-text-secondary text-[11px] font-medium px-2 py-1 rounded-md transition-colors disabled:opacity-40"
+                  >
+                    {lookingUp === sub.id ? '...' : 'AI'}
+                  </button>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
     )
   }
 
@@ -426,7 +692,7 @@ export default function EventsPage() {
           <div className="flex items-center gap-8">
             <div>
               <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-0.5">Totaal events</p>
-              <p className="text-[22px] font-bold text-text-primary tracking-tight leading-none tabular-nums">{events.length}</p>
+              <p className="text-[22px] font-bold text-text-primary tracking-tight leading-none tabular-nums">{parentEvents.length}</p>
             </div>
             <div>
               <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-0.5">Aandacht nodig</p>
@@ -437,7 +703,7 @@ export default function EventsPage() {
             <div>
               <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-0.5">Terugkerend</p>
               <p className="text-[22px] font-bold text-text-primary tracking-tight leading-none tabular-nums">
-                {events.filter(e => e.recurring === 1).length}
+                {parentEvents.filter(e => e.recurring === 1).length}
               </p>
             </div>
           </div>
@@ -474,9 +740,11 @@ export default function EventsPage() {
         ) : (
           <div className="space-y-2">
             {displayEvents.map((event, i) => {
-              const attention = needsAttention(event)
+              const subs = subEventsMap.get(event.id) || []
+              const allItems = [event, ...subs]
+              const attention = allItems.some(needsAttention)
               const expired = event.expected_date && isExpired(event.expected_date) && event.recurring === 1
-              const noDate = !event.expected_date
+              const noDate = !event.expected_date && subs.length === 0
               const isEditing = editingId === event.id
 
               return (
@@ -496,86 +764,72 @@ export default function EventsPage() {
                     </div>
                   ) : (
                     /* Event card display */
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <span className="text-text-primary text-[14px] font-semibold">{event.name}</span>
-                          {event.recurring === 1 && (
-                            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg border bg-accent/10 text-accent border-accent/20">
-                              Terugkerend
-                            </span>
-                          )}
-                          {noDate && (
-                            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg border bg-warning/10 text-warning border-warning/20">
-                              Datum onbekend
-                            </span>
-                          )}
-                          {expired && (
-                            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg border bg-warning/10 text-warning border-warning/20">
-                              Datum verlopen — bijwerken
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-text-secondary mt-1">
-                          {event.expected_date && (
-                            <span>
-                              Datum: <strong>{new Date(event.expected_date).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })}</strong>
-                            </span>
-                          )}
-                          <span>Duur: <strong>{formatNumber(event.duration_days)} dagen</strong></span>
-                          <span>Impact: <strong>+{formatNumber(event.impact_percentage)}%</strong></span>
-                          {!event.expected_date && event.last_checked_at && (
-                            <span className="text-text-tertiary">
-                              Laatst gecheckt: {new Date(event.last_checked_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' })}
-                            </span>
-                          )}
-                        </div>
-                        {event.notes && (
-                          <p className="text-[12px] text-text-tertiary mt-1.5">{event.notes}</p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {event.ai_lookup === 1 && (
-                          <button
-                            onClick={() => handleAiLookup(event.id)}
-                            disabled={lookingUp === event.id}
-                            className="bg-surface-2 hover:bg-surface-3 text-text-secondary text-[12px] font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40"
-                          >
-                            {lookingUp === event.id ? 'Opzoeken...' : 'AI datum'}
-                          </button>
-                        )}
-                        <button
-                          onClick={() => startEdit(event)}
-                          className="bg-surface-2 hover:bg-surface-3 text-text-secondary text-[12px] font-medium px-3 py-1.5 rounded-lg transition-colors"
-                        >
-                          Bewerken
-                        </button>
-                        {confirmDelete === event.id ? (
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => handleDelete(event.id)}
-                              disabled={deleting === event.id}
-                              className="text-danger hover:bg-danger/10 text-[12px] font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40"
-                            >
-                              {deleting === event.id ? 'Verwijderen...' : 'Bevestigen'}
-                            </button>
-                            <button
-                              onClick={() => setConfirmDelete(null)}
-                              className="text-text-tertiary hover:text-text-secondary text-[12px] font-medium px-2 py-1.5 rounded-lg transition-colors"
-                            >
-                              Annuleer
-                            </button>
+                    <>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <span className="text-text-primary text-[14px] font-semibold">{event.name}</span>
+                            {event.recurring === 1 && (
+                              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg border bg-accent/10 text-accent border-accent/20">
+                                Terugkerend
+                              </span>
+                            )}
+                            {subs.length > 0 && (
+                              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg border bg-surface-2 text-text-tertiary border-border-subtle">
+                                {subs.length} onderdeel{subs.length !== 1 ? 'en' : ''}
+                              </span>
+                            )}
+                            {noDate && (
+                              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg border bg-warning/10 text-warning border-warning/20">
+                                Datum onbekend
+                              </span>
+                            )}
+                            {expired && subs.length === 0 && (
+                              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg border bg-warning/10 text-warning border-warning/20">
+                                Datum verlopen — bijwerken
+                              </span>
+                            )}
                           </div>
-                        ) : (
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-text-secondary mt-1">
+                            {event.expected_date && subs.length === 0 && (
+                              <span>
+                                Datum: <strong>{new Date(event.expected_date).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })}</strong>
+                              </span>
+                            )}
+                            {subs.length === 0 && (
+                              <span>Duur: <strong>{formatNumber(event.duration_days)} dagen</strong></span>
+                            )}
+                            <span>Impact: <strong>+{formatNumber(event.impact_percentage)}%</strong></span>
+                            {!event.expected_date && subs.length === 0 && event.last_checked_at && (
+                              <span className="text-text-tertiary">
+                                Laatst gecheckt: {new Date(event.last_checked_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              </span>
+                            )}
+                          </div>
+                          {event.notes && (
+                            <p className="text-[12px] text-text-tertiary mt-1.5">{event.notes}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {event.ai_lookup === 1 && subs.length === 0 && (
+                            <button
+                              onClick={() => handleAiLookup(event.id)}
+                              disabled={lookingUp === event.id}
+                              className="bg-surface-2 hover:bg-surface-3 text-text-secondary text-[12px] font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40"
+                            >
+                              {lookingUp === event.id ? 'Opzoeken...' : 'AI datum'}
+                            </button>
+                          )}
                           <button
-                            onClick={() => setConfirmDelete(event.id)}
-                            className="text-danger hover:bg-danger/10 text-[12px] font-medium px-3 py-1.5 rounded-lg transition-colors"
+                            onClick={() => startEdit(event)}
+                            className="bg-surface-2 hover:bg-surface-3 text-text-secondary text-[12px] font-medium px-3 py-1.5 rounded-lg transition-colors"
                           >
-                            Verwijder
+                            Bewerken
                           </button>
-                        )}
+                        </div>
                       </div>
-                    </div>
+                      {renderSubEvents(event.id)}
+                    </>
                   )}
                 </div>
               )
@@ -628,7 +882,7 @@ export default function EventsPage() {
                                 ? 'bg-warning/10 text-warning border-warning/20'
                                 : 'bg-accent/10 text-accent border-accent/20'
                           }`}>
-                            {peak.ratio}× gemiddeld
+                            {peak.ratio}&times; gemiddeld
                           </span>
                           <button
                             onClick={() => createEventFromPeak(peak)}

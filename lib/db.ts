@@ -86,6 +86,7 @@ function initSchema(db: Database.Database) {
 
     CREATE TABLE IF NOT EXISTS events (
       id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      parent_id         INTEGER REFERENCES events(id) ON DELETE CASCADE,
       name              TEXT NOT NULL,
       expected_date     TEXT,
       duration_days     INTEGER NOT NULL DEFAULT 7,
@@ -161,5 +162,8 @@ function initSchema(db: Database.Database) {
       ALTER TABLE events ADD COLUMN ai_lookup INTEGER NOT NULL DEFAULT 1;
       ALTER TABLE events ADD COLUMN ai_skip_months INTEGER NOT NULL DEFAULT 6;
     `)
+  }
+  if (!eventColNames.has('parent_id')) {
+    db.exec(`ALTER TABLE events ADD COLUMN parent_id INTEGER REFERENCES events(id) ON DELETE CASCADE;`)
   }
 }

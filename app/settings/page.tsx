@@ -26,6 +26,13 @@ export default function SettingsPage() {
   const [claudeMsg, setClaudeMsg] = useState('')
   const [claudeExpanded, setClaudeExpanded] = useState(false)
 
+  // Event settings
+  const [aiMaxTokens, setAiMaxTokens] = useState('100')
+  const [eventSaving, setEventSaving] = useState(false)
+  const [eventMsg, setEventMsg] = useState('')
+  const [totalInputTokens, setTotalInputTokens] = useState(0)
+  const [totalOutputTokens, setTotalOutputTokens] = useState(0)
+
   // Stock settings
   const [warehouseInboundDays, setWarehouseInboundDays] = useState('14')
   const [safetyMarginDays, setSafetyMarginDays] = useState('7')
@@ -47,6 +54,9 @@ export default function SettingsPage() {
       setWooConsumerKey(settings.woo_consumer_key || '')
       setHasWooSecret(settings.has_woo_consumer_secret === '1')
       setHasClaudeKey(settings.has_claude_api_key === '1')
+      setAiMaxTokens(settings.ai_max_tokens_per_lookup || '100')
+      setTotalInputTokens(parseInt(settings.ai_total_input_tokens || '0', 10))
+      setTotalOutputTokens(parseInt(settings.ai_total_output_tokens || '0', 10))
       setWarehouseInboundDays(settings.warehouse_inbound_days || '14')
       setSafetyMarginDays(settings.safety_margin_days || '7')
     }).finally(() => setLoading(false))
@@ -129,6 +139,22 @@ export default function SettingsPage() {
     }
   }
 
+  async function saveEventSettings() {
+    setEventSaving(true)
+    setEventMsg('')
+    try {
+      await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: { ai_max_tokens_per_lookup: aiMaxTokens } }),
+      })
+      setEventMsg('Opgeslagen')
+      setTimeout(() => setEventMsg(''), 3000)
+    } finally {
+      setEventSaving(false)
+    }
+  }
+
   async function testConnection() {
     await saveWooSettings()
     setSyncing(true)
@@ -199,6 +225,27 @@ export default function SettingsPage() {
           </div>
         ) : (
           <div className="space-y-4">
+            {/* Token usage overzicht */}
+            {(totalInputTokens > 0 || totalOutputTokens > 0) && (
+              <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5">
+                <h2 className="text-[14px] font-semibold text-text-primary mb-3">AI token gebruik</h2>
+                <div className="flex items-center gap-8">
+                  <div>
+                    <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-0.5">Input tokens</p>
+                    <p className="text-[22px] font-bold text-text-primary tracking-tight leading-none tabular-nums">{totalInputTokens.toLocaleString('nl-NL')}</p>
+                  </div>
+                  <div>
+                    <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-0.5">Output tokens</p>
+                    <p className="text-[22px] font-bold text-text-primary tracking-tight leading-none tabular-nums">{totalOutputTokens.toLocaleString('nl-NL')}</p>
+                  </div>
+                  <div>
+                    <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-0.5">Totaal</p>
+                    <p className="text-[22px] font-bold text-accent tracking-tight leading-none tabular-nums">{(totalInputTokens + totalOutputTokens).toLocaleString('nl-NL')}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* WooCommerce verbinding */}
             <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5">
               <div className="flex items-center justify-between">
@@ -319,6 +366,31 @@ export default function SettingsPage() {
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* Evenement instellingen */}
+            <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5">
+              <h2 className="text-[14px] font-semibold text-text-primary mb-3">Evenement instellingen</h2>
+              <div className="mb-3">
+                <label className={labelClass}>Max tokens per AI lookup</label>
+                <input
+                  type="number"
+                  className={`${inputClass} max-w-xs`}
+                  value={aiMaxTokens}
+                  onChange={e => setAiMaxTokens(e.target.value)}
+                  min="10"
+                  max="4096"
+                />
+                <p className="text-text-tertiary text-[12px] mt-1">
+                  Maximum aantal output tokens dat Claude mag gebruiken per datum opzoeking. Standaard: 100.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button className={primaryBtn} disabled={eventSaving} onClick={saveEventSettings}>
+                  {eventSaving ? 'Opslaan...' : 'Opslaan'}
+                </button>
+                {eventMsg && <span className="text-success text-[12px]">{eventMsg}</span>}
+              </div>
             </div>
 
             {/* Voorraad instellingen */}
