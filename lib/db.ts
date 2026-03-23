@@ -91,6 +91,8 @@ function initSchema(db: Database.Database) {
       duration_days     INTEGER NOT NULL DEFAULT 7,
       impact_percentage INTEGER NOT NULL DEFAULT 100,
       recurring         INTEGER NOT NULL DEFAULT 1,
+      ai_lookup         INTEGER NOT NULL DEFAULT 1,
+      ai_skip_months    INTEGER NOT NULL DEFAULT 6,
       last_checked_at   DATETIME,
       notes             TEXT,
       created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -123,5 +125,20 @@ function initSchema(db: Database.Database) {
         db.prepare('UPDATE suppliers SET contact_email = ? WHERE id = ?').run(s.contact_info, s.id)
       }
     }
+  }
+
+  // Supplier order_cycle_days migration
+  if (!colNames.has('order_cycle_days')) {
+    db.exec(`ALTER TABLE suppliers ADD COLUMN order_cycle_days INTEGER NOT NULL DEFAULT 30;`)
+  }
+
+  // Events AI columns migration
+  const eventCols = db.prepare("PRAGMA table_info(events)").all() as { name: string }[]
+  const eventColNames = new Set(eventCols.map(c => c.name))
+  if (!eventColNames.has('ai_lookup')) {
+    db.exec(`
+      ALTER TABLE events ADD COLUMN ai_lookup INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE events ADD COLUMN ai_skip_months INTEGER NOT NULL DEFAULT 6;
+    `)
   }
 }

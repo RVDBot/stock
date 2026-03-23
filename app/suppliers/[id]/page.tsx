@@ -7,6 +7,7 @@ interface Supplier {
   id: number
   name: string
   lead_time_days: number
+  order_cycle_days: number
   inspection: string
   contact_name: string | null
   contact_email: string | null
@@ -15,6 +16,16 @@ interface Supplier {
   contact_info: string | null
   notes: string | null
   created_at: string
+}
+
+interface OrderListProduct {
+  productId: number
+  sku: string
+  name: string
+  currentStock: number
+  dailySales: number
+  requiredStock: number
+  toOrder: number
 }
 
 interface ProductStatus {
@@ -87,6 +98,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   const [form, setForm] = useState({
     name: '',
     lead_time_days: 0,
+    order_cycle_days: 30,
     inspection: 'never',
     contact_name: '',
     contact_email: '',
@@ -102,6 +114,10 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   const [orderArrival, setOrderArrival] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [activeTab, setActiveTab] = useState<'products' | 'orderlist'>('products')
+  const [orderList, setOrderList] = useState<OrderListProduct[]>([])
+  const [orderListCoverageDays, setOrderListCoverageDays] = useState(0)
+  const [orderListLoading, setOrderListLoading] = useState(false)
 
   function loadData() {
     setLoading(true)
@@ -117,6 +133,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
         setForm({
           name: sup.name,
           lead_time_days: sup.lead_time_days,
+          order_cycle_days: sup.order_cycle_days ?? 30,
           inspection: sup.inspection || 'never',
           contact_name: sup.contact_name || '',
           contact_email: sup.contact_email || '',
@@ -173,7 +190,19 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
     window.location.href = '/suppliers'
   }
 
+  function loadOrderList() {
+    setOrderListLoading(true)
+    fetch(`/api/order-list?supplier_id=${id}`).then(r => r.json()).then(data => {
+      setOrderList(data.products || [])
+      setOrderListCoverageDays(data.coverageDays || 0)
+    }).finally(() => setOrderListLoading(false))
+  }
+
   useEffect(() => { loadData() }, [])
+
+  useEffect(() => {
+    if (activeTab === 'orderlist') loadOrderList()
+  }, [activeTab])
 
   const summary = useMemo(() => ({
     orderNow: products.filter(p => p.status === 'order_now').length,
@@ -529,8 +558,9 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
             )}
 
             {/* Product overview */}
-            <div className="mb-4">
-              <h2 className="text-[14px] font-semibold text-text-primary mb-2">Producten ({products.length})</h2>
+            {activeTab === 'products' && (
+              <div className="mb-4">
+                <h2 className="text-[14px] font-semibold text-text-primary mb-2">Producten ({products.length})</h2>
               {products.length === 0 ? (
                 <div className="bg-surface-1 rounded-2xl border border-border-subtle p-12 text-center">
                   <p className="text-text-tertiary text-[13px]">Geen producten gekoppeld aan deze fabrikant.</p>
@@ -605,7 +635,84 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                   })}
                 </div>
               )}
-            </div>
+              </div>
+            )}
+
+            {/* Order list tab */}
+            {activeTab === 'orderlist' && (
+              <div className="mb-4">
+                {orderListLoading ? (
+                  <div className="space-y-2">
+                    {[...Array(4)].map((_, i) => (
+                      <div key={i} className="bg-surface-1 rounded-xl border border-border-subtle p-3">
+                        <div className="flex gap-3"><div className="skeleton h-4 w-20" /><div className="skeleton h-4 w-full" /></div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    <div className="bg-surface-1 rounded-2xl border border-border-subtle p-4 mb-3">
+                      <p className="text-text-secondary text-[13px]">
+                        Berekend voor <strong>{orderListCoverageDays} dagen</strong> voorraad
+                        <span className="text-text-tertiary ml-2">
+                          (levertijd {supplier.lead_time_days}d + inbound + marge + cyclus {supplier.order_cycle_days ?? 30}d)
+                        </span>
+                      </p>
+                    </div>
+
+                    {/* Header */}
+                    <div className="flex items-center gap-3 px-3 py-2 text-[11px] text-text-tertiary font-semibold uppercase tracking-wider">
+                      <span className="w-24">SKU</span>
+                      <span className="flex-1">Naam</span>
+                      <span className="w-20 text-right">Voorraad</span>
+                      <span className="w-20 text-right">Verkoop/d</span>
+                      <span className="w-24 text-right">Nodig</span>
+                      <span className="w-24 text-right">Bestellen</span>
+                    </div>
+
+                    <div className="space-y-1">
+                      {orderList.map((p, i) => (
+                        <div
+                          key={p.productId}
+                          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border animate-row ${
+                            p.toOrder > 0 ? 'bg-surface-1 border-border-subtle' : 'bg-surface-1/50 border-border-subtle/50'
+                          }`}
+                          style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
+                        >
+                          <span className="text-text-tertiary font-mono text-[11px] w-24 shrink-0 truncate">{p.sku}</span>
+                          <span className={`text-[13px] flex-1 truncate ${p.toOrder > 0 ? 'text-text-primary' : 'text-text-tertiary'}`}>{p.name}</span>
+                          <span className="w-20 text-right text-[13px] tabular-nums text-text-secondary">{formatNumber(p.currentStock)}</span>
+                          <span className="w-20 text-right text-[13px] tabular-nums text-text-secondary">{p.dailySales.toLocaleString('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span>
+                          <span className="w-24 text-right text-[13px] tabular-nums text-text-secondary">{formatNumber(p.requiredStock)}</span>
+                          <span className={`w-24 text-right text-[13px] tabular-nums font-semibold ${
+                            p.toOrder > 0 ? 'text-danger' : 'text-success'
+                          }`}>
+                            {p.toOrder > 0 ? formatNumber(p.toOrder) : '—'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {orderList.filter(p => p.toOrder > 0).length > 0 && (
+                      <div className="flex items-center justify-between mt-3 px-3 py-3 rounded-xl bg-surface-1 border border-border-subtle">
+                        <span className="text-[13px] font-semibold text-text-primary">
+                          Totaal te bestellen: {orderList.filter(p => p.toOrder > 0).length} producten
+                        </span>
+                        <span className="text-[16px] font-bold text-danger tabular-nums">
+                          {formatNumber(orderList.reduce((sum, p) => sum + p.toOrder, 0))} stuks
+                        </span>
+                      </div>
+                    )}
+
+                    {orderList.length === 0 && (
+                      <div className="bg-surface-1 rounded-2xl border border-border-subtle p-12 text-center">
+                        <p className="text-text-tertiary text-[13px]">Geen producten gekoppeld aan deze fabrikant.</p>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Orders overview */}
             <div>

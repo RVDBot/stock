@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
 
   const body = await req.json()
-  const { name, lead_time_days, inspection, contact_name, contact_email, phone, preferred_contact, contact_info, notes } = body
+  const { name, lead_time_days, order_cycle_days, inspection, contact_name, contact_email, phone, preferred_contact, contact_info, notes } = body
 
   if (!name || lead_time_days == null) {
     return NextResponse.json({ error: 'name en lead_time_days zijn verplicht' }, { status: 400 })
@@ -30,10 +30,11 @@ export async function POST(req: NextRequest) {
 
   const db = getDb()
   const result = db.prepare(
-    'INSERT INTO suppliers (name, lead_time_days, inspection, contact_name, contact_email, phone, preferred_contact, contact_info, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO suppliers (name, lead_time_days, order_cycle_days, inspection, contact_name, contact_email, phone, preferred_contact, contact_info, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(
     name,
     lead_time_days,
+    order_cycle_days ?? 30,
     inspection || 'never',
     contact_name || null,
     contact_email || null,
@@ -50,7 +51,7 @@ export async function PUT(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
 
   const body = await req.json()
-  const { id, name, lead_time_days, inspection, contact_name, contact_email, phone, preferred_contact, contact_info, notes } = body
+  const { id, name, lead_time_days, order_cycle_days, inspection, contact_name, contact_email, phone, preferred_contact, contact_info, notes } = body
 
   if (!id) {
     return NextResponse.json({ error: 'id is verplicht' }, { status: 400 })
@@ -58,10 +59,11 @@ export async function PUT(req: NextRequest) {
 
   const db = getDb()
   const result = db.prepare(
-    'UPDATE suppliers SET name = ?, lead_time_days = ?, inspection = ?, contact_name = ?, contact_email = ?, phone = ?, preferred_contact = ?, contact_info = ?, notes = ? WHERE id = ?'
+    'UPDATE suppliers SET name = ?, lead_time_days = ?, order_cycle_days = ?, inspection = ?, contact_name = ?, contact_email = ?, phone = ?, preferred_contact = ?, contact_info = ?, notes = ? WHERE id = ?'
   ).run(
     name,
     lead_time_days,
+    order_cycle_days ?? 30,
     inspection || 'never',
     contact_name || null,
     contact_email || null,
