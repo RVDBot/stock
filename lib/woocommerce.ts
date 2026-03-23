@@ -80,25 +80,11 @@ export async function fetchAllProducts(): Promise<WooProduct[]> {
 
   // Fetch variations for variable products
   const allProducts: WooProduct[] = []
-  const DEBUG_PREFIX = 'SR-TX2'
   for (const p of products) {
-    if (p.sku?.startsWith(DEBUG_PREFIX)) {
-      log('info', `DEBUG ${p.sku}: gevonden als top-level product type=${p.type} id=${p.id} stock=${p.stock_quantity} manage_stock=${p.manage_stock}`)
-    }
     if (p.type === 'variable') {
       const variations = await wooFetch<WooVariation>(`products/${p.id}/variations`, { status: 'any' })
-      const isDebugParent = p.name?.includes('TX2') || p.sku?.startsWith(DEBUG_PREFIX)
-      if (isDebugParent) {
-        log('info', `DEBUG variable product "${p.name}" (id=${p.id}): ${variations.length} variaties gevonden`)
-      }
       for (const v of variations) {
-        if (!v.sku) {
-          if (isDebugParent) log('info', `DEBUG variatie id=${v.id} van "${p.name}": GEEN SKU, overgeslagen`)
-          continue
-        }
-        if (isDebugParent) {
-          log('info', `DEBUG variatie "${p.name}": sku=${v.sku} id=${v.id} stock=${v.stock_quantity} manage_stock=${v.manage_stock} status=${v.status}`)
-        }
+        if (!v.sku) continue
         const attrStr = v.attributes.map(a => a.option).join(' / ')
         // If variation doesn't manage its own stock, inherit from parent
         const stock = v.manage_stock ? v.stock_quantity : (p.stock_quantity ?? v.stock_quantity)

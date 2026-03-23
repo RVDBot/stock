@@ -37,7 +37,6 @@ export async function syncProducts() {
   const skuDuplicates = new Map<string, typeof products[0][]>()
   for (const p of products) {
     if (!p.sku) continue
-    if (p.sku.includes('+')) continue
 
     // Track all occurrences for debugging
     if (!skuDuplicates.has(p.sku)) skuDuplicates.set(p.sku, [])
