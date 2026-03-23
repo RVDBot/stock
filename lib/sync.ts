@@ -84,7 +84,8 @@ export async function syncProducts() {
       // Check if this woo_product_id already exists with a different SKU
       const existingByWooId = db.prepare('SELECT id, sku FROM products WHERE woo_product_id = ?').get(p.id) as { id: number; sku: string } | undefined
       if (existingByWooId && existingByWooId.sku !== p.sku) {
-        // SKU changed in WooCommerce — update existing record
+        // SKU changed in WooCommerce — remove any stale record with the new SKU first
+        db.prepare('DELETE FROM products WHERE sku = ? AND woo_product_id != ?').run(p.sku, p.id)
         log('info', `SKU gewijzigd: "${existingByWooId.sku}" → "${p.sku}" (woo_id=${p.id})`)
         updateByWooId.run(p.sku, p.name, stock, price, p.id)
       } else {
