@@ -68,6 +68,38 @@ export async function syncProducts() {
     }
   }
 
+  // Handle composite SKUs (A+B):
+  // - If both A and B exist as standalone products → skip (it's a bundle)
+  // - Otherwise → use first part (A) as the real SKU
+  const standaloneSKUs = new Set<string>()
+  for (const sku of skuMap.keys()) {
+    if (!sku.includes('+')) standaloneSKUs.add(sku)
+  }
+
+  const compositesToRemove: string[] = []
+  const compositesToRemap: { oldSku: string; newSku: string; product: typeof products[0] }[] = []
+  for (const [sku, product] of skuMap) {
+    if (!sku.includes('+')) continue
+    const parts = sku.split('+').map(s => s.trim())
+    const allPartsExist = parts.every(part => standaloneSKUs.has(part))
+    if (allPartsExist) {
+      compositesToRemove.push(sku)
+      log('info', `Samengesteld product ${sku} overgeslagen: alle delen bestaan als apart product`)
+    } else {
+      const realSku = parts[0]
+      compositesToRemove.push(sku)
+      compositesToRemap.push({ oldSku: sku, newSku: realSku, product: { ...product, sku: realSku } })
+      log('info', `Samengesteld product ${sku} → SKU vereenvoudigd naar ${realSku}`)
+    }
+  }
+  for (const sku of compositesToRemove) skuMap.delete(sku)
+  for (const { newSku, product } of compositesToRemap) {
+    // Only add if not already present (standalone version takes priority)
+    if (!skuMap.has(newSku)) {
+      skuMap.set(newSku, product)
+    }
+  }
+
   // Also handle SKU changes: update existing product by woo_product_id if SKU changed
   const updateByWooId = db.prepare(`
     UPDATE products SET sku = ?, name = ?, current_stock = ?, price = ?, updated_at = CURRENT_TIMESTAMP
