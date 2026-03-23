@@ -42,6 +42,7 @@ interface SubEventForm {
   name: string
   expected_date: string
   duration_days: string
+  impact_percentage: string
 }
 
 const EMPTY_FORM: EventForm = {
@@ -55,7 +56,7 @@ const EMPTY_FORM: EventForm = {
   notes: '',
 }
 
-const EMPTY_SUB: SubEventForm = { name: '', expected_date: '', duration_days: '7' }
+const EMPTY_SUB: SubEventForm = { name: '', expected_date: '', duration_days: '7', impact_percentage: '100' }
 
 function formatNumber(n: number): string {
   return n.toLocaleString('nl-NL')
@@ -238,7 +239,7 @@ export default function EventsPage() {
     setShowForm(false)
     setConfirmDelete(null)
     const subs = subEventsMap.get(event.id) || []
-    setNewSubs(subs.map(s => ({ name: s.name, expected_date: s.expected_date || '', duration_days: String(s.duration_days) })))
+    setNewSubs(subs.map(s => ({ name: s.name, expected_date: s.expected_date || '', duration_days: String(s.duration_days), impact_percentage: String(s.impact_percentage) })))
     setForm({
       name: event.name,
       expected_date: event.expected_date || '',
@@ -315,7 +316,7 @@ export default function EventsPage() {
             name: sub.name.trim(),
             expected_date: sub.expected_date || null,
             duration_days: parseInt(sub.duration_days) || 7,
-            impact_percentage: body.impact_percentage,
+            impact_percentage: parseInt(sub.impact_percentage) || 100,
             recurring: body.recurring,
             ai_lookup: body.ai_lookup,
             ai_skip_months: body.ai_skip_months,
@@ -409,38 +410,39 @@ export default function EventsPage() {
               required
             />
           </div>
-          <div>
-            <label className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider block mb-1">Verwachte datum</label>
-            <input
-              type="date"
-              value={form.expected_date}
-              onChange={e => setForm(f => ({ ...f, expected_date: e.target.value }))}
-              className="w-full bg-surface-0 border border-border rounded-xl px-3 py-2 text-[13px] text-text-primary outline-none focus:border-accent transition-colors"
-            />
-            {newSubs.length > 0 && (
-              <span className="text-text-tertiary text-[11px] mt-0.5 block">Optioneel als sub-events datums hebben</span>
-            )}
-          </div>
-          <div>
-            <label className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider block mb-1">Duur (dagen)</label>
-            <input
-              type="number"
-              min="1"
-              value={form.duration_days}
-              onChange={e => setForm(f => ({ ...f, duration_days: e.target.value }))}
-              className="w-full bg-surface-0 border border-border rounded-xl px-3 py-2 text-[13px] text-text-primary outline-none focus:border-accent transition-colors"
-            />
-          </div>
-          <div>
-            <label className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider block mb-1">Impact percentage</label>
-            <input
-              type="number"
-              min="0"
-              value={form.impact_percentage}
-              onChange={e => setForm(f => ({ ...f, impact_percentage: e.target.value }))}
-              className="w-full bg-surface-0 border border-border rounded-xl px-3 py-2 text-[13px] text-text-primary outline-none focus:border-accent transition-colors"
-            />
-          </div>
+          {newSubs.length === 0 && (
+            <>
+              <div>
+                <label className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider block mb-1">Verwachte datum</label>
+                <input
+                  type="date"
+                  value={form.expected_date}
+                  onChange={e => setForm(f => ({ ...f, expected_date: e.target.value }))}
+                  className="w-full bg-surface-0 border border-border rounded-xl px-3 py-2 text-[13px] text-text-primary outline-none focus:border-accent transition-colors"
+                />
+              </div>
+              <div>
+                <label className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider block mb-1">Duur (dagen)</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={form.duration_days}
+                  onChange={e => setForm(f => ({ ...f, duration_days: e.target.value }))}
+                  className="w-full bg-surface-0 border border-border rounded-xl px-3 py-2 text-[13px] text-text-primary outline-none focus:border-accent transition-colors"
+                />
+              </div>
+              <div>
+                <label className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider block mb-1">Impact percentage</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={form.impact_percentage}
+                  onChange={e => setForm(f => ({ ...f, impact_percentage: e.target.value }))}
+                  className="w-full bg-surface-0 border border-border rounded-xl px-3 py-2 text-[13px] text-text-primary outline-none focus:border-accent transition-colors"
+                />
+              </div>
+            </>
+          )}
           <div className="flex items-end">
             <label className="flex items-center gap-2 cursor-pointer pb-2">
               <input
@@ -504,6 +506,15 @@ export default function EventsPage() {
             <p className="text-text-tertiary text-[12px]">Geen sub-events. Voeg onderdelen toe zoals Open, Quarter Finals, Semi Finals, Finals.</p>
           ) : (
             <div className="space-y-2">
+              {newSubs.length > 0 && (
+                <div className="flex items-center gap-2 px-3 text-[10px] text-text-tertiary font-semibold uppercase tracking-wider">
+                  <span className="flex-1">Naam</span>
+                  <span className="w-36 text-center">Datum</span>
+                  <span className="w-16 text-center">Dagen</span>
+                  <span className="w-20 text-center">Impact %</span>
+                  <span className="w-6" />
+                </div>
+              )}
               {newSubs.map((sub, i) => (
                 <div key={i} className="flex items-center gap-2 bg-surface-0 border border-border-subtle rounded-xl px-3 py-2">
                   <input
@@ -527,7 +538,14 @@ export default function EventsPage() {
                     className="bg-transparent text-[13px] text-text-primary outline-none w-16 text-center"
                     title="Dagen"
                   />
-                  <span className="text-text-tertiary text-[11px]">d</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={sub.impact_percentage}
+                    onChange={e => updateSubEvent(i, 'impact_percentage', e.target.value)}
+                    className="bg-transparent text-[13px] text-text-primary outline-none w-20 text-center"
+                    title="Impact %"
+                  />
                   <button
                     type="button"
                     onClick={() => removeSubEvent(i)}
@@ -628,6 +646,7 @@ export default function EventsPage() {
                   </span>
                 ) : null}
                 <span className="text-text-tertiary text-[12px]">{sub.duration_days}d</span>
+                <span className="text-text-tertiary text-[12px]">+{sub.impact_percentage}%</span>
                 {sub.ai_lookup === 1 && (
                   <button
                     onClick={() => handleAiLookup(sub.id)}

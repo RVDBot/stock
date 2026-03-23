@@ -80,24 +80,24 @@ export async function fetchAllProducts(): Promise<WooProduct[]> {
 
   // Fetch variations for variable products
   const allProducts: WooProduct[] = []
-  const DEBUG_SKU = 'RES010100'
+  const DEBUG_PREFIX = 'SR-TX2'
   for (const p of products) {
-    if (p.sku === DEBUG_SKU) {
-      log('info', `DEBUG ${DEBUG_SKU}: gevonden als top-level product type=${p.type} id=${p.id} stock=${p.stock_quantity} manage_stock=${p.manage_stock}`)
+    if (p.sku?.startsWith(DEBUG_PREFIX)) {
+      log('info', `DEBUG ${p.sku}: gevonden als top-level product type=${p.type} id=${p.id} stock=${p.stock_quantity} manage_stock=${p.manage_stock}`)
     }
     if (p.type === 'variable') {
       const variations = await wooFetch<WooVariation>(`products/${p.id}/variations`, { status: 'any' })
+      if (p.name?.includes('TX2') || p.sku?.startsWith(DEBUG_PREFIX)) {
+        log('info', `DEBUG variable product "${p.name}" (id=${p.id}): ${variations.length} variaties gevonden`)
+      }
       for (const v of variations) {
         if (!v.sku) continue
-        if (v.sku === DEBUG_SKU) {
-          log('info', `DEBUG ${DEBUG_SKU}: gevonden als variatie van "${p.name}" (parent id=${p.id}) variation_id=${v.id} v.stock=${v.stock_quantity} v.manage_stock=${v.manage_stock} parent.stock=${p.stock_quantity} parent.manage_stock=${p.manage_stock}`)
+        if (v.sku.startsWith(DEBUG_PREFIX)) {
+          log('info', `DEBUG ${v.sku}: gevonden als variatie van "${p.name}" (parent id=${p.id}) variation_id=${v.id} v.stock=${v.stock_quantity} v.manage_stock=${v.manage_stock} parent.stock=${p.stock_quantity} parent.manage_stock=${p.manage_stock}`)
         }
         const attrStr = v.attributes.map(a => a.option).join(' / ')
         // If variation doesn't manage its own stock, inherit from parent
         const stock = v.manage_stock ? v.stock_quantity : (p.stock_quantity ?? v.stock_quantity)
-        if (v.sku === DEBUG_SKU) {
-          log('info', `DEBUG ${DEBUG_SKU}: berekende stock=${stock}`)
-        }
         allProducts.push({
           id: v.id,
           name: attrStr ? `${p.name} — ${attrStr}` : p.name,

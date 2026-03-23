@@ -82,9 +82,11 @@ const PREFERRED_CONTACT_OPTIONS = [
 
 interface TemplateField {
   name: string
-  type: 'text' | 'number' | 'select'
+  type: 'text' | 'number' | 'select' | 'fixed' | 'price'
   unit?: string
   options?: string[]
+  fixedValue?: string
+  currency?: string
   shared: boolean
 }
 
@@ -321,6 +323,17 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   function removeField(index: number) {
     setTemplateFields(f => f.filter((_, i) => i !== index))
   }
+
+  function moveField(from: number, to: number) {
+    setTemplateFields(f => {
+      const next = [...f]
+      const [item] = next.splice(from, 1)
+      next.splice(to, 0, item)
+      return next
+    })
+  }
+
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
 
   async function handleSaveTemplate() {
     if (!templateName.trim()) return
@@ -860,56 +873,105 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                     <label className="text-[11px] text-text-tertiary font-semibold uppercase tracking-wider block mb-2">Velden</label>
                     <div className="space-y-2 mb-3">
                       {templateFields.map((field, i) => (
-                        <div key={i} className="flex items-center gap-2 p-2 rounded-lg bg-surface-0 border border-border-subtle">
-                          <input
-                            type="text"
-                            value={field.name}
-                            onChange={e => updateField(i, { name: e.target.value })}
-                            className="flex-1 text-[13px] px-2 py-1.5 rounded-md bg-surface-1 border border-border-subtle text-text-primary outline-none focus:border-accent"
-                            placeholder="Veldnaam"
-                          />
-                          <select
-                            value={field.type}
-                            onChange={e => updateField(i, { type: e.target.value as TemplateField['type'] })}
-                            className="text-[12px] px-2 py-1.5 rounded-md bg-surface-1 border border-border-subtle text-text-primary w-24"
-                          >
-                            <option value="text">Tekst</option>
-                            <option value="number">Getal</option>
-                            <option value="select">Dropdown</option>
-                          </select>
-                          {field.type === 'number' && (
+                        <div
+                          key={i}
+                          draggable
+                          onDragStart={() => setDragIndex(i)}
+                          onDragOver={e => { e.preventDefault() }}
+                          onDrop={() => { if (dragIndex !== null && dragIndex !== i) moveField(dragIndex, i); setDragIndex(null) }}
+                          onDragEnd={() => setDragIndex(null)}
+                          className={`p-2 rounded-lg bg-surface-0 border transition-colors ${
+                            dragIndex === i ? 'border-accent/40 opacity-50' : 'border-border-subtle'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="cursor-grab text-text-tertiary text-[14px] select-none" title="Sleep om te verplaatsen">&vellip;</span>
                             <input
                               type="text"
-                              value={field.unit || ''}
-                              onChange={e => updateField(i, { unit: e.target.value })}
-                              className="w-16 text-[12px] px-2 py-1.5 rounded-md bg-surface-1 border border-border-subtle text-text-primary outline-none"
-                              placeholder="Eenheid"
+                              value={field.name}
+                              onChange={e => updateField(i, { name: e.target.value })}
+                              className="flex-1 text-[13px] px-2 py-1.5 rounded-md bg-surface-1 border border-border-subtle text-text-primary outline-none focus:border-accent"
+                              placeholder="Veldnaam"
                             />
+                            <select
+                              value={field.type}
+                              onChange={e => updateField(i, { type: e.target.value as TemplateField['type'] })}
+                              className="text-[12px] px-2 py-1.5 rounded-md bg-surface-1 border border-border-subtle text-text-primary w-28"
+                            >
+                              <option value="text">Tekst</option>
+                              <option value="number">Getal</option>
+                              <option value="select">Dropdown</option>
+                              <option value="fixed">Vaste waarde</option>
+                              <option value="price">Prijs</option>
+                            </select>
+                            <label className="flex items-center gap-1 cursor-pointer whitespace-nowrap">
+                              <input
+                                type="checkbox"
+                                checked={field.shared}
+                                onChange={e => updateField(i, { shared: e.target.checked })}
+                                className="w-3.5 h-3.5 accent-accent"
+                              />
+                              <span className="text-[11px] text-text-secondary">Fabrikant</span>
+                            </label>
+                            <button
+                              onClick={() => removeField(i)}
+                              className="text-danger hover:bg-danger/10 text-[12px] px-2 py-1 rounded-md transition-colors"
+                            >
+                              &times;
+                            </button>
+                          </div>
+                          {/* Type-specific options on second row */}
+                          {field.type === 'number' && (
+                            <div className="flex items-center gap-2 mt-2 ml-6">
+                              <span className="text-[11px] text-text-tertiary">Eenheid:</span>
+                              <input
+                                type="text"
+                                value={field.unit || ''}
+                                onChange={e => updateField(i, { unit: e.target.value })}
+                                className="w-24 text-[12px] px-2 py-1 rounded-md bg-surface-1 border border-border-subtle text-text-primary outline-none"
+                                placeholder="bijv. mm"
+                              />
+                            </div>
                           )}
                           {field.type === 'select' && (
-                            <input
-                              type="text"
-                              value={(field.options || []).join(', ')}
-                              onChange={e => updateField(i, { options: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
-                              className="flex-1 text-[12px] px-2 py-1.5 rounded-md bg-surface-1 border border-border-subtle text-text-primary outline-none"
-                              placeholder="Opties (komma-gescheiden)"
-                            />
+                            <div className="flex items-center gap-2 mt-2 ml-6">
+                              <span className="text-[11px] text-text-tertiary shrink-0">Opties:</span>
+                              <input
+                                type="text"
+                                value={(field.options || []).join(' | ')}
+                                onChange={e => updateField(i, { options: e.target.value.split('|').map(s => s.trim()).filter(Boolean) })}
+                                className="flex-1 text-[12px] px-2 py-1 rounded-md bg-surface-1 border border-border-subtle text-text-primary outline-none"
+                                placeholder="Optie 1 | Optie 2 | Optie 3"
+                              />
+                            </div>
                           )}
-                          <label className="flex items-center gap-1 cursor-pointer whitespace-nowrap">
-                            <input
-                              type="checkbox"
-                              checked={field.shared}
-                              onChange={e => updateField(i, { shared: e.target.checked })}
-                              className="w-3.5 h-3.5 accent-accent"
-                            />
-                            <span className="text-[11px] text-text-secondary">Fabrikant</span>
-                          </label>
-                          <button
-                            onClick={() => removeField(i)}
-                            className="text-danger hover:bg-danger/10 text-[12px] px-2 py-1 rounded-md transition-colors"
-                          >
-                            &times;
-                          </button>
+                          {field.type === 'fixed' && (
+                            <div className="flex items-center gap-2 mt-2 ml-6">
+                              <span className="text-[11px] text-text-tertiary">Waarde:</span>
+                              <input
+                                type="text"
+                                value={field.fixedValue || ''}
+                                onChange={e => updateField(i, { fixedValue: e.target.value })}
+                                className="flex-1 text-[12px] px-2 py-1 rounded-md bg-surface-1 border border-border-subtle text-text-primary outline-none"
+                                placeholder="Vaste waarde die bij elk product getoond wordt"
+                              />
+                            </div>
+                          )}
+                          {field.type === 'price' && (
+                            <div className="flex items-center gap-2 mt-2 ml-6">
+                              <span className="text-[11px] text-text-tertiary">Valuta:</span>
+                              <select
+                                value={field.currency || 'EUR'}
+                                onChange={e => updateField(i, { currency: e.target.value })}
+                                className="text-[12px] px-2 py-1 rounded-md bg-surface-1 border border-border-subtle text-text-primary w-20"
+                              >
+                                <option value="EUR">&euro;</option>
+                                <option value="USD">$</option>
+                                <option value="GBP">&pound;</option>
+                                <option value="CNY">&yen;</option>
+                              </select>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

@@ -5,9 +5,11 @@ import Nav from '@/components/Nav'
 
 interface TemplateField {
   name: string
-  type: 'text' | 'number' | 'select'
+  type: 'text' | 'number' | 'select' | 'fixed' | 'price'
   unit?: string
   options?: string[]
+  fixedValue?: string
+  currency?: string
   shared: boolean
 }
 
@@ -149,9 +151,18 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
 
     let text = `${product.sku} — ${product.name}\n`
     for (const field of sharedFields) {
+      if (field.type === 'fixed') {
+        if (field.fixedValue) text += `${field.name}: ${field.fixedValue}\n`
+        continue
+      }
       const value = specs[field.name] || ''
       if (value) {
-        text += `${field.name}: ${value}${field.unit ? ' ' + field.unit : ''}\n`
+        if (field.type === 'price') {
+          const symbol = field.currency === 'USD' ? '$' : field.currency === 'GBP' ? '£' : field.currency === 'CNY' ? '¥' : '€'
+          text += `${field.name}: ${symbol}${value}\n`
+        } else {
+          text += `${field.name}: ${value}${field.unit ? ' ' + field.unit : ''}\n`
+        }
       }
     }
 
@@ -283,7 +294,21 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                                 </div>
                               </td>
                               <td className="px-4 py-2.5">
-                                {field.type === 'select' && field.options ? (
+                                {field.type === 'fixed' ? (
+                                  <span className="text-text-secondary text-[13px]">{field.fixedValue || '—'}</span>
+                                ) : field.type === 'price' ? (
+                                  <div className="flex items-center gap-1 max-w-sm">
+                                    <span className="text-text-tertiary text-[13px]">{field.currency === 'USD' ? '$' : field.currency === 'GBP' ? '£' : field.currency === 'CNY' ? '¥' : '€'}</span>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      value={specs[field.name] || ''}
+                                      onChange={e => setSpecs(s => ({ ...s, [field.name]: e.target.value }))}
+                                      className={`${inputClass} flex-1`}
+                                      placeholder="0.00"
+                                    />
+                                  </div>
+                                ) : field.type === 'select' && field.options ? (
                                   <select
                                     value={specs[field.name] || ''}
                                     onChange={e => setSpecs(s => ({ ...s, [field.name]: e.target.value }))}

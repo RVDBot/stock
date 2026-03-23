@@ -74,12 +74,14 @@ export async function POST(req: NextRequest) {
 
     db.prepare('UPDATE events SET last_checked_at = CURRENT_TIMESTAMP WHERE id = ?').run(id)
 
+    const tokensUsed = message.usage.input_tokens + message.usage.output_tokens
+
     if (dateMatch) {
       db.prepare('UPDATE events SET expected_date = ? WHERE id = ?').run(dateMatch[0], id)
-      log('info', `AI datum gevonden voor "${eventLabel}": ${dateMatch[0]}`)
+      log('info', `AI datum gevonden voor "${eventLabel}": ${dateMatch[0]} (tokens: ${tokensUsed})`)
       return NextResponse.json({ success: true, date: dateMatch[0] })
     } else {
-      log('warn', `AI kon datum niet vinden voor "${eventLabel}": ${text}`)
+      log('warn', `AI kon datum niet vinden voor "${eventLabel}": ${text} (tokens: ${tokensUsed})`)
       return NextResponse.json({ success: true, date: null, message: 'Datum niet gevonden' })
     }
   } catch (e) {
