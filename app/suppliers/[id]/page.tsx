@@ -219,10 +219,18 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
 
   function loadOrderList() {
     setOrderListLoading(true)
-    fetch(`/api/order-list?supplier_id=${id}`).then(r => r.json()).then(data => {
-      setOrderList(data.products || [])
-      setOrderListCoverageDays(data.coverageDays || 0)
-    }).finally(() => setOrderListLoading(false))
+    fetch(`/api/order-list?supplier_id=${id}`)
+      .then(r => {
+        if (!r.ok) console.error('Order list API error:', r.status)
+        return r.json()
+      })
+      .then(data => {
+        console.log('Order list response:', data)
+        setOrderList(data.products || [])
+        setOrderListCoverageDays(data.coverageDays || 0)
+      })
+      .catch(err => console.error('Order list fetch failed:', err))
+      .finally(() => setOrderListLoading(false))
   }
 
   useEffect(() => { loadData() }, [])
