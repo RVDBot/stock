@@ -143,6 +143,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   const [bulkMode, setBulkMode] = useState(false)
   const [selectedProducts, setSelectedProducts] = useState<Set<number>>(new Set())
   const [sourceProductId, setSourceProductId] = useState<number | ''>('')
+  const [productsWithSpecs, setProductsWithSpecs] = useState<{ productId: number; sku: string; name: string }[]>([])
   const [bulkEditing, setBulkEditing] = useState(false)
   const [bulkTemplate, setBulkTemplate] = useState<{ templateId: number; fields: TemplateField[]; baseSpecs: Record<string, string> } | null>(null)
   const [bulkOverrides, setBulkOverrides] = useState<Record<string, Record<string, string>>>({})
@@ -164,8 +165,10 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
       fetch(`/api/purchase-orders?supplier_id=${id}`).then(r => r.json()),
       fetch('/api/settings').then(r => r.json()),
       fetch(`/api/spec-templates?supplier_id=${id}`).then(r => r.json()),
-    ]).then(([supplierData, productsData, ordersData, settData, templatesData]) => {
+      fetch(`/api/products?supplier_id=${id}&with_specs=1`).then(r => r.json()),
+    ]).then(([supplierData, productsData, ordersData, settData, templatesData, specsData]) => {
       setSpecTemplates(Array.isArray(templatesData) ? templatesData : [])
+      setProductsWithSpecs(Array.isArray(specsData) ? specsData : [])
       const sup = supplierData.error ? null : supplierData as Supplier
       setSupplier(sup)
       if (sup) {
@@ -773,7 +776,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                           className="w-full text-[13px] px-3 py-2 rounded-lg bg-surface-0 border border-border-subtle text-text-primary"
                         >
                           <option value="">Selecteer bronproduct...</option>
-                          {products.map(p => (
+                          {productsWithSpecs.map(p => (
                             <option key={p.productId} value={p.productId}>{p.sku} — {p.name}</option>
                           ))}
                         </select>

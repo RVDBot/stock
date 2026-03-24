@@ -25,6 +25,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(product)
   }
 
+  // Return product IDs that have specs filled in for a supplier
+  const withSpecs = req.nextUrl.searchParams.get('with_specs')
+  if (withSpecs === '1' && supplierId) {
+    const db = getDb()
+    const rows = db.prepare(`
+      SELECT id as productId, sku, name FROM products
+      WHERE supplier_id = ? AND active = 1 AND spec_template_id IS NOT NULL AND specs != '{}'
+      ORDER BY name
+    `).all(parseInt(supplierId, 10))
+    return NextResponse.json(rows)
+  }
+
   // Return inactive (ignored) products
   if (inactive === '1') {
     const db = getDb()
