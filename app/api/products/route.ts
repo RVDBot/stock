@@ -63,6 +63,25 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ success: true, updated: body.ids.length })
     }
 
+    // Bulk apply specs: { ids, bulk_specs: { spec_template_id, specs, overrides: { [productId]: { field: value } } } }
+    if (body.bulk_specs) {
+      const { spec_template_id, specs, overrides } = body.bulk_specs as {
+        spec_template_id: number
+        specs: Record<string, string>
+        overrides: Record<string, Record<string, string>>
+      }
+      const stmt = db.prepare('UPDATE products SET spec_template_id = ?, specs = ? WHERE id = ?')
+      const tx = db.transaction((ids: number[]) => {
+        for (const id of ids) {
+          const productOverrides = overrides?.[String(id)] || {}
+          const mergedSpecs = { ...specs, ...productOverrides }
+          stmt.run(spec_template_id, JSON.stringify(mergedSpecs), id)
+        }
+      })
+      tx(body.ids)
+      return NextResponse.json({ success: true, updated: body.ids.length })
+    }
+
     // Bulk assign supplier
     const stmt = db.prepare('UPDATE products SET supplier_id = ? WHERE id = ?')
     const tx = db.transaction((ids: number[]) => {

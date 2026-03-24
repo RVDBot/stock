@@ -139,6 +139,15 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   const [orderListCoverageDays, setOrderListCoverageDays] = useState(0)
   const [orderListLoading, setOrderListLoading] = useState(false)
 
+  // Bulk specs
+  const [bulkMode, setBulkMode] = useState(false)
+  const [selectedProducts, setSelectedProducts] = useState<Set<number>>(new Set())
+  const [sourceProductId, setSourceProductId] = useState<number | ''>('')
+  const [bulkEditing, setBulkEditing] = useState(false)
+  const [bulkTemplate, setBulkTemplate] = useState<{ templateId: number; fields: TemplateField[]; baseSpecs: Record<string, string> } | null>(null)
+  const [bulkOverrides, setBulkOverrides] = useState<Record<string, Record<string, string>>>({})
+  const [bulkSaving, setBulkSaving] = useState(false)
+
   // Templates
   const [specTemplates, setSpecTemplates] = useState<SpecTemplate[]>([])
   const [showTemplateForm, setShowTemplateForm] = useState(false)
@@ -234,6 +243,47 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
       })
       .catch(err => console.error('Order list fetch failed:', err))
       .finally(() => setOrderListLoading(false))
+  }
+
+  async function startBulkEdit() {
+    if (!sourceProductId || selectedProducts.size === 0) return
+    const res = await fetch(`/api/products?id=${sourceProductId}`)
+    const product = await res.json()
+    if (!product.spec_template_id || !product.template_fields) {
+      alert('Bronproduct heeft geen template. Wijs eerst een template toe op de productpagina.')
+      return
+    }
+    const fields = JSON.parse(product.template_fields) as TemplateField[]
+    const specs = product.specs ? (typeof product.specs === 'string' ? JSON.parse(product.specs) : product.specs) : {}
+    setBulkTemplate({ templateId: product.spec_template_id, fields, baseSpecs: specs })
+    setBulkOverrides({})
+    setBulkEditing(true)
+  }
+
+  async function saveBulkSpecs() {
+    if (!bulkTemplate) return
+    setBulkSaving(true)
+    try {
+      await fetch('/api/products', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ids: [...selectedProducts],
+          bulk_specs: {
+            spec_template_id: bulkTemplate.templateId,
+            specs: bulkTemplate.baseSpecs,
+            overrides: bulkOverrides,
+          },
+        }),
+      })
+      setBulkEditing(false)
+      setBulkMode(false)
+      setSelectedProducts(new Set())
+      setSourceProductId('')
+      loadData()
+    } finally {
+      setBulkSaving(false)
+    }
   }
 
   useEffect(() => { loadData() }, [])
@@ -695,7 +745,165 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
             {/* Product overview */}
             {activeTab === 'products' && (
               <div className="mb-4">
-                <h2 className="text-[14px] font-semibold text-text-primary mb-2">Producten ({products.length})</h2>
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="text-[14px] font-semibold text-text-primary">Producten ({products.length})</h2>
+                  {products.length > 0 && !bulkEditing && (
+                    <button
+                      onClick={() => { setBulkMode(!bulkMode); setSelectedProducts(new Set()); setSourceProductId('') }}
+                      className={`text-[12px] font-medium px-3 py-1.5 rounded-lg transition-all duration-150 ${
+                        bulkMode
+                          ? 'bg-accent text-white'
+                          : 'bg-surface-2 border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-surface-3'
+                      }`}
+                    >
+                      {bulkMode ? 'Annuleren' : 'Bulk specs'}
+                    </button>
+                  )}
+                </div>
+
+                {/* Bulk specs toolbar */}
+                {bulkMode && !bulkEditing && (
+                  <div className="bg-surface-1 rounded-2xl border border-accent/30 p-4 mb-3 animate-row">
+                    <div className="flex flex-wrap items-end gap-3">
+                      <div className="flex-1 min-w-[200px]">
+                        <label className="text-[11px] text-text-tertiary font-semibold uppercase tracking-wider block mb-1">Bronproduct</label>
+                        <select
+                          value={sourceProductId}
+                          onChange={e => setSourceProductId(e.target.value ? parseInt(e.target.value, 10) : '')}
+                          className="w-full text-[13px] px-3 py-2 rounded-lg bg-surface-0 border border-border-subtle text-text-primary"
+                        >
+                          <option value="">Selecteer bronproduct...</option>
+                          {products.map(p => (
+                            <option key={p.productId} value={p.productId}>{p.sku} — {p.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setSelectedProducts(new Set(products.map(p => p.productId)))}
+                          className="text-[12px] text-accent hover:text-accent-hover transition-colors"
+                        >
+                          Alles selecteren
+                        </button>
+                        <button
+                          onClick={() => setSelectedProducts(new Set())}
+                          className="text-[12px] text-text-tertiary hover:text-text-secondary transition-colors"
+                        >
+                          Deselecteren
+                        </button>
+                      </div>
+                      <button
+                        onClick={startBulkEdit}
+                        disabled={!sourceProductId || selectedProducts.size === 0}
+                        className="text-[12px] font-medium px-4 py-2 rounded-lg bg-accent text-white hover:bg-accent-hover disabled:opacity-40 transition-all duration-150"
+                      >
+                        Specs overnemen ({selectedProducts.size})
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Bulk edit table */}
+                {bulkEditing && bulkTemplate && (
+                  <div className="bg-surface-1 rounded-2xl border border-accent/30 p-4 mb-3 animate-row">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-[14px] font-semibold text-text-primary">Specs bewerken — {selectedProducts.size} producten</h3>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => { setBulkEditing(false); setBulkTemplate(null) }}
+                          className="text-[12px] font-medium px-3 py-1.5 rounded-lg bg-surface-2 border border-border-subtle text-text-secondary hover:text-text-primary transition-all"
+                        >
+                          Annuleren
+                        </button>
+                        <button
+                          onClick={saveBulkSpecs}
+                          disabled={bulkSaving}
+                          className="text-[12px] font-medium px-4 py-1.5 rounded-lg bg-accent text-white hover:bg-accent-hover disabled:opacity-60 transition-all"
+                        >
+                          {bulkSaving ? 'Opslaan...' : 'Opslaan'}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-[12px]">
+                        <thead>
+                          <tr className="text-[11px] text-text-tertiary font-semibold uppercase tracking-wider">
+                            <th className="text-left py-2 pr-3 sticky left-0 bg-surface-1">Product</th>
+                            {bulkTemplate.fields.filter(f => f.type !== 'fixed').map(f => (
+                              <th key={f.name} className="text-left py-2 px-2 whitespace-nowrap">{f.name}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {products.filter(p => selectedProducts.has(p.productId)).map(p => (
+                            <tr key={p.productId} className="border-t border-border-subtle">
+                              <td className="py-2 pr-3 sticky left-0 bg-surface-1">
+                                <span className="text-text-tertiary font-mono text-[10px]">{p.sku}</span>
+                                <span className="text-text-primary text-[12px] ml-2">{p.name}</span>
+                              </td>
+                              {bulkTemplate.fields.filter(f => f.type !== 'fixed').map(f => {
+                                const override = bulkOverrides[String(p.productId)]?.[f.name]
+                                const value = override ?? bulkTemplate.baseSpecs[f.name] ?? ''
+                                const isOverridden = override !== undefined && override !== bulkTemplate.baseSpecs[f.name]
+                                return (
+                                  <td key={f.name} className="py-2 px-2">
+                                    {f.type === 'select' ? (
+                                      <select
+                                        value={value}
+                                        onChange={e => {
+                                          const v = e.target.value
+                                          setBulkOverrides(prev => {
+                                            const next = { ...prev }
+                                            if (!next[String(p.productId)]) next[String(p.productId)] = {}
+                                            if (v === bulkTemplate.baseSpecs[f.name]) {
+                                              delete next[String(p.productId)][f.name]
+                                              if (Object.keys(next[String(p.productId)]).length === 0) delete next[String(p.productId)]
+                                            } else {
+                                              next[String(p.productId)] = { ...next[String(p.productId)], [f.name]: v }
+                                            }
+                                            return next
+                                          })
+                                        }}
+                                        className={`w-full text-[12px] px-2 py-1 rounded bg-surface-0 border text-text-primary ${isOverridden ? 'border-accent' : 'border-border-subtle'}`}
+                                      >
+                                        <option value="">—</option>
+                                        {(f.options || []).map(opt => (
+                                          <option key={opt} value={opt}>{opt}</option>
+                                        ))}
+                                      </select>
+                                    ) : (
+                                      <input
+                                        type={f.type === 'number' || f.type === 'price' ? 'number' : 'text'}
+                                        step={f.type === 'price' ? '0.01' : undefined}
+                                        value={value}
+                                        onChange={e => {
+                                          const v = e.target.value
+                                          setBulkOverrides(prev => {
+                                            const next = { ...prev }
+                                            if (!next[String(p.productId)]) next[String(p.productId)] = {}
+                                            if (v === bulkTemplate.baseSpecs[f.name]) {
+                                              delete next[String(p.productId)][f.name]
+                                              if (Object.keys(next[String(p.productId)]).length === 0) delete next[String(p.productId)]
+                                            } else {
+                                              next[String(p.productId)] = { ...next[String(p.productId)], [f.name]: v }
+                                            }
+                                            return next
+                                          })
+                                        }}
+                                        className={`w-full text-[12px] px-2 py-1 rounded bg-surface-0 border text-text-primary min-w-[80px] ${isOverridden ? 'border-accent' : 'border-border-subtle'}`}
+                                      />
+                                    )}
+                                  </td>
+                                )
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
               {products.length === 0 ? (
                 <div className="bg-surface-1 rounded-2xl border border-border-subtle p-12 text-center">
                   <p className="text-text-tertiary text-[13px]">Geen producten gekoppeld aan deze fabrikant.</p>
@@ -708,23 +916,43 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                     return (
                       <div
                         key={p.productId}
-                        className="bg-surface-1 rounded-2xl border border-border-subtle p-4 animate-row"
+                        className={`bg-surface-1 rounded-2xl border p-4 animate-row ${
+                          bulkMode && selectedProducts.has(p.productId) ? 'border-accent/50' : 'border-border-subtle'
+                        }`}
                         style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
+                        onClick={bulkMode ? () => {
+                          setSelectedProducts(prev => {
+                            const next = new Set(prev)
+                            if (next.has(p.productId)) next.delete(p.productId)
+                            else next.add(p.productId)
+                            return next
+                          })
+                        } : undefined}
                       >
                         <div className="flex items-start justify-between gap-3">
+                          {bulkMode && (
+                            <div className="shrink-0 pt-0.5">
+                              <input
+                                type="checkbox"
+                                checked={selectedProducts.has(p.productId)}
+                                onChange={() => {}}
+                                className="w-4 h-4 rounded accent-accent"
+                              />
+                            </div>
+                          )}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
                               <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-lg border ${style.bg} ${style.text} ${style.border}`}>
                                 {style.label}
                               </span>
-                              <a href={`/products/${p.productId}`} className="text-text-primary text-[14px] font-semibold hover:text-accent transition-colors">{p.name}</a>
+                              <a href={bulkMode ? undefined : `/products/${p.productId}`} className={`text-text-primary text-[14px] font-semibold ${bulkMode ? '' : 'hover:text-accent transition-colors'}`}>{p.name}</a>
                             </div>
-                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-text-secondary ml-8">
+                            <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-text-secondary ${bulkMode ? 'ml-0' : 'ml-8'}`}>
                               <span className="text-text-tertiary font-mono text-[11px]">{p.sku}</span>
                               <span>Voorraad: <strong>{formatNumber(p.currentStock)}</strong></span>
                               <span>Verkoop: <strong>{p.dailySales.toLocaleString('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}/dag</strong></span>
                               <span>Leeg over: <strong>{p.daysUntilEmpty} dagen</strong></span>
-                              {adminBase && (
+                              {!bulkMode && adminBase && (
                                 <a
                                   href={`${adminBase}?post=${p.wooProductId}&action=edit`}
                                   target="_blank"
@@ -735,13 +963,13 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                                 </a>
                               )}
                             </div>
-                            {p.pendingOrderQty > 0 && (
+                            {!bulkMode && p.pendingOrderQty > 0 && (
                               <p className="text-[11px] text-success mt-1 ml-8">
                                 {formatNumber(p.pendingOrderQty)} besteld
                                 {p.pendingOrderArrival && `, verwacht ${new Date(p.pendingOrderArrival).toLocaleDateString('nl-NL')}`}
                               </p>
                             )}
-                            {productOrders.length > 0 && (
+                            {!bulkMode && productOrders.length > 0 && (
                               <div className="mt-1 ml-8 space-y-0.5">
                                 {productOrders.map(o => (
                                   <p key={o.id} className="text-[11px] text-text-tertiary">
@@ -754,16 +982,18 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                                 ))}
                               </div>
                             )}
-                            {p.dataWeeks < 12 && (
+                            {!bulkMode && p.dataWeeks < 12 && (
                               <p className="text-[11px] text-warning mt-1 ml-8">
                                 Beperkte verkoopdata ({p.dataWeeks} weken)
                               </p>
                             )}
                           </div>
-                          <div className="shrink-0 text-right">
-                            <p className="text-[16px] font-bold text-text-primary tabular-nums">{p.daysUntilEmpty}d</p>
-                            <p className="text-text-tertiary text-[11px]">tot leeg</p>
-                          </div>
+                          {!bulkMode && (
+                            <div className="shrink-0 text-right">
+                              <p className="text-[16px] font-bold text-text-primary tabular-nums">{p.daysUntilEmpty}d</p>
+                              <p className="text-text-tertiary text-[11px]">tot leeg</p>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )
