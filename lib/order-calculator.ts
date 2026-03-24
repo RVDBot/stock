@@ -15,6 +15,9 @@ interface ProductForOrder {
   dailySales: number
   requiredStock: number
   toOrder: number
+  unitPrice: number | null
+  currency: string | null
+  totalCost: number | null
 }
 
 export function calculateOrderList(supplierId: number): {
@@ -47,14 +50,32 @@ export function calculateOrderList(supplierId: number): {
     WHERE expected_date IS NOT NULL
   `).all() as Event[]
 
-  // Get products for this supplier
+  // Get products for this supplier (with specs and template for pricing)
   const products = db.prepare(`
-    SELECT id, sku, name, current_stock, manual_daily_sales
-    FROM products
-    WHERE supplier_id = ? AND active = 1
-  `).all(supplierId) as { id: number; sku: string; name: string; current_stock: number; manual_daily_sales: number | null }[]
+    SELECT p.id, p.sku, p.name, p.current_stock, p.manual_daily_sales, p.specs,
+           st.fields as template_fields
+    FROM products p
+    LEFT JOIN spec_templates st ON p.spec_template_id = st.id
+    WHERE p.supplier_id = ? AND p.active = 1
+  `).all(supplierId) as { id: number; sku: string; name: string; current_stock: number; manual_daily_sales: number | null; specs: string | null; template_fields: string | null }[]
 
   log('info', `Bestellijst fabrikant ${supplierId}: ${products.length} producten, coverageDays=${coverageDays} (lead=${supplier.lead_time_days} + inbound=${warehouseInbound} + marge=${safetyMargin} + cyclus=${supplier.order_cycle_days})`)
+
+  // Helper: extract first price field from template specs
+  function getUnitPrice(specs: string | null, templateFields: string | null): { price: number | null; currency: string | null } {
+    if (!specs || !templateFields) return { price: null, currency: null }
+    try {
+      const fields = JSON.parse(templateFields) as { name: string; type: string; currency?: string }[]
+      const values = JSON.parse(specs) as Record<string, string>
+      const priceField = fields.find(f => f.type === 'price')
+      if (!priceField) return { price: null, currency: null }
+      const val = parseFloat(values[priceField.name])
+      if (isNaN(val) || val <= 0) return { price: null, currency: priceField.currency || null }
+      return { price: val, currency: priceField.currency || null }
+    } catch {
+      return { price: null, currency: null }
+    }
+  }
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -72,6 +93,8 @@ export function calculateOrderList(supplierId: number): {
     const dailySales = product.manual_daily_sales
       ?? (salesData.days > 0 ? (salesData.total || 0) / 90 : 0)
 
+    const { price: unitPrice, currency } = getUnitPrice(product.specs, product.template_fields)
+
     if (dailySales <= 0) {
       result.push({
         productId: product.id,
@@ -81,6 +104,9 @@ export function calculateOrderList(supplierId: number): {
         dailySales: 0,
         requiredStock: 0,
         toOrder: 0,
+        unitPrice,
+        currency,
+        totalCost: null,
       })
       continue
     }
@@ -118,6 +144,9 @@ export function calculateOrderList(supplierId: number): {
       dailySales: Math.round(dailySales * 10) / 10,
       requiredStock,
       toOrder,
+      unitPrice,
+      currency,
+      totalCost: unitPrice && toOrder > 0 ? Math.round(unitPrice * toOrder * 100) / 100 : null,
     })
   }
 

@@ -26,6 +26,9 @@ interface OrderListProduct {
   dailySales: number
   requiredStock: number
   toOrder: number
+  unitPrice: number | null
+  currency: string | null
+  totalCost: number | null
 }
 
 interface ProductStatus {
@@ -802,41 +805,66 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                       <span className="w-20 text-right">Verkoop/d</span>
                       <span className="w-24 text-right">Nodig</span>
                       <span className="w-24 text-right">Bestellen</span>
+                      <span className="w-20 text-right">Stukprijs</span>
+                      <span className="w-24 text-right">Kosten</span>
                     </div>
 
                     <div className="space-y-1">
-                      {orderList.map((p, i) => (
-                        <div
-                          key={p.productId}
-                          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border animate-row ${
-                            p.toOrder > 0 ? 'bg-surface-1 border-border-subtle' : 'bg-surface-1/50 border-border-subtle/50'
-                          }`}
-                          style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
-                        >
-                          <span className="text-text-tertiary font-mono text-[11px] w-24 shrink-0 truncate">{p.sku}</span>
-                          <a href={`/products/${p.productId}`} className={`text-[13px] flex-1 truncate hover:text-accent transition-colors ${p.toOrder > 0 ? 'text-text-primary' : 'text-text-tertiary'}`}>{p.name}</a>
-                          <span className="w-20 text-right text-[13px] tabular-nums text-text-secondary">{formatNumber(p.currentStock)}</span>
-                          <span className="w-20 text-right text-[13px] tabular-nums text-text-secondary">{p.dailySales.toLocaleString('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span>
-                          <span className="w-24 text-right text-[13px] tabular-nums text-text-secondary">{formatNumber(p.requiredStock)}</span>
-                          <span className={`w-24 text-right text-[13px] tabular-nums font-semibold ${
-                            p.toOrder > 0 ? 'text-danger' : 'text-success'
-                          }`}>
-                            {p.toOrder > 0 ? formatNumber(p.toOrder) : '—'}
-                          </span>
-                        </div>
-                      ))}
+                      {orderList.map((p, i) => {
+                        const sym = p.currency === 'USD' ? '$' : p.currency === 'GBP' ? '£' : p.currency === 'CNY' ? '¥' : p.currency === 'EUR' ? '€' : ''
+                        return (
+                          <div
+                            key={p.productId}
+                            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border animate-row ${
+                              p.toOrder > 0 ? 'bg-surface-1 border-border-subtle' : 'bg-surface-1/50 border-border-subtle/50'
+                            }`}
+                            style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
+                          >
+                            <span className="text-text-tertiary font-mono text-[11px] w-24 shrink-0 truncate">{p.sku}</span>
+                            <a href={`/products/${p.productId}`} className={`text-[13px] flex-1 truncate hover:text-accent transition-colors ${p.toOrder > 0 ? 'text-text-primary' : 'text-text-tertiary'}`}>{p.name}</a>
+                            <span className="w-20 text-right text-[13px] tabular-nums text-text-secondary">{formatNumber(p.currentStock)}</span>
+                            <span className="w-20 text-right text-[13px] tabular-nums text-text-secondary">{p.dailySales.toLocaleString('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span>
+                            <span className="w-24 text-right text-[13px] tabular-nums text-text-secondary">{formatNumber(p.requiredStock)}</span>
+                            <span className={`w-24 text-right text-[13px] tabular-nums font-semibold ${
+                              p.toOrder > 0 ? 'text-danger' : 'text-success'
+                            }`}>
+                              {p.toOrder > 0 ? formatNumber(p.toOrder) : '—'}
+                            </span>
+                            <span className="w-20 text-right text-[13px] tabular-nums text-text-tertiary">
+                              {p.unitPrice != null ? `${sym}${p.unitPrice.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                            </span>
+                            <span className={`w-24 text-right text-[13px] tabular-nums font-semibold ${p.totalCost != null ? 'text-text-primary' : 'text-text-tertiary'}`}>
+                              {p.totalCost != null ? `${sym}${p.totalCost.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                            </span>
+                          </div>
+                        )
+                      })}
                     </div>
 
-                    {orderList.filter(p => p.toOrder > 0).length > 0 && (
-                      <div className="flex items-center justify-between mt-3 px-3 py-3 rounded-xl bg-surface-1 border border-border-subtle">
-                        <span className="text-[13px] font-semibold text-text-primary">
-                          Totaal te bestellen: {orderList.filter(p => p.toOrder > 0).length} producten
-                        </span>
-                        <span className="text-[16px] font-bold text-danger tabular-nums">
-                          {formatNumber(orderList.reduce((sum, p) => sum + p.toOrder, 0))} stuks
-                        </span>
-                      </div>
-                    )}
+                    {orderList.filter(p => p.toOrder > 0).length > 0 && (() => {
+                      const toOrderProducts = orderList.filter(p => p.toOrder > 0)
+                      const totalItems = toOrderProducts.reduce((sum, p) => sum + p.toOrder, 0)
+                      const totalCost = toOrderProducts.reduce((sum, p) => sum + (p.totalCost || 0), 0)
+                      const currencies = [...new Set(toOrderProducts.map(p => p.currency).filter(Boolean))]
+                      const sym = currencies.length === 1 ? (currencies[0] === 'USD' ? '$' : currencies[0] === 'GBP' ? '£' : currencies[0] === 'CNY' ? '¥' : '€') : ''
+                      return (
+                        <div className="flex items-center justify-between mt-3 px-3 py-3 rounded-xl bg-surface-1 border border-border-subtle">
+                          <span className="text-[13px] font-semibold text-text-primary">
+                            Totaal te bestellen: {toOrderProducts.length} producten
+                          </span>
+                          <div className="flex items-center gap-4">
+                            <span className="text-[16px] font-bold text-danger tabular-nums">
+                              {formatNumber(totalItems)} stuks
+                            </span>
+                            {totalCost > 0 && (
+                              <span className="text-[16px] font-bold text-text-primary tabular-nums">
+                                {sym}{totalCost.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })()}
 
                     {orderList.length === 0 && (
                       <div className="bg-surface-1 rounded-2xl border border-border-subtle p-12 text-center">
