@@ -1156,7 +1156,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                           }`}
                         >
                           <div className="flex items-center gap-2">
-                            <span className="cursor-grab text-text-tertiary text-[14px] select-none" title="Sleep om te verplaatsen">&vellip;</span>
+                            <span className="cursor-grab text-text-tertiary text-[14px] select-none" title="Sleep om te verplaatsen">{'\u22EE'}</span>
                             <input
                               type="text"
                               value={field.name}
