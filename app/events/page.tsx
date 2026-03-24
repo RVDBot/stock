@@ -642,7 +642,7 @@ export default function EventsPage() {
                   </span>
                 ) : sub.last_checked_at ? (
                   <span className="text-text-tertiary text-[11px]">
-                    Gecheckt {new Date(sub.last_checked_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })}
+                    Gecheckt {new Date(sub.last_checked_at + 'Z').toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })}
                   </span>
                 ) : null}
                 <span className="text-text-tertiary text-[12px]">{sub.duration_days}d</span>
@@ -821,7 +821,7 @@ export default function EventsPage() {
                             <span>Impact: <strong>+{formatNumber(event.impact_percentage)}%</strong></span>
                             {!event.expected_date && subs.length === 0 && event.last_checked_at && (
                               <span className="text-text-tertiary">
-                                Laatst gecheckt: {new Date(event.last_checked_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                Laatst gecheckt: {new Date(event.last_checked_at + 'Z').toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' })}
                               </span>
                             )}
                           </div>

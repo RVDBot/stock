@@ -154,7 +154,7 @@ export default function LogsPage() {
                       )}
                     </div>
                     <span className="text-text-tertiary text-[11px] tabular-nums shrink-0">
-                      {new Date(log.created_at).toLocaleString('nl-NL', {
+                      {new Date(log.created_at + 'Z').toLocaleString('nl-NL', {
                         day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
                       })}
                     </span>
