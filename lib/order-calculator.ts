@@ -52,7 +52,7 @@ export function calculateOrderList(supplierId: number): {
     SELECT id, sku, name, current_stock, manual_daily_sales
     FROM products
     WHERE supplier_id = ? AND active = 1
-  `).all() as { id: number; sku: string; name: string; current_stock: number; manual_daily_sales: number | null }[]
+  `).all(supplierId) as { id: number; sku: string; name: string; current_stock: number; manual_daily_sales: number | null }[]
 
   log('info', `Bestellijst fabrikant ${supplierId}: ${products.length} producten, coverageDays=${coverageDays} (lead=${supplier.lead_time_days} + inbound=${warehouseInbound} + marge=${safetyMargin} + cyclus=${supplier.order_cycle_days})`)
 
