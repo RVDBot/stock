@@ -706,7 +706,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                               <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-lg border ${style.bg} ${style.text} ${style.border}`}>
                                 {style.label}
                               </span>
-                              <span className="text-text-primary text-[14px] font-semibold">{p.name}</span>
+                              <a href={`/products/${p.productId}`} className="text-text-primary text-[14px] font-semibold hover:text-accent transition-colors">{p.name}</a>
                             </div>
                             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-text-secondary ml-8">
                               <span className="text-text-tertiary font-mono text-[11px]">{p.sku}</span>
@@ -778,9 +778,11 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                     <div className="bg-surface-1 rounded-2xl border border-border-subtle p-4 mb-3">
                       <p className="text-text-secondary text-[13px]">
                         Berekend voor <strong>{orderListCoverageDays} dagen</strong> voorraad
-                        <span className="text-text-tertiary ml-2">
-                          (levertijd {supplier.lead_time_days}d + inbound + marge + cyclus {supplier.order_cycle_days ?? 30}d)
-                        </span>
+                        {orderListCoverageDays > 0 && (
+                          <span className="text-text-tertiary ml-2">
+                            (levertijd {supplier.lead_time_days}d + inbound + marge + cyclus {supplier.order_cycle_days ?? 30}d)
+                          </span>
+                        )}
                       </p>
                     </div>
 
@@ -804,7 +806,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                           style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
                         >
                           <span className="text-text-tertiary font-mono text-[11px] w-24 shrink-0 truncate">{p.sku}</span>
-                          <span className={`text-[13px] flex-1 truncate ${p.toOrder > 0 ? 'text-text-primary' : 'text-text-tertiary'}`}>{p.name}</span>
+                          <a href={`/products/${p.productId}`} className={`text-[13px] flex-1 truncate hover:text-accent transition-colors ${p.toOrder > 0 ? 'text-text-primary' : 'text-text-tertiary'}`}>{p.name}</a>
                           <span className="w-20 text-right text-[13px] tabular-nums text-text-secondary">{formatNumber(p.currentStock)}</span>
                           <span className="w-20 text-right text-[13px] tabular-nums text-text-secondary">{p.dailySales.toLocaleString('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span>
                           <span className="w-24 text-right text-[13px] tabular-nums text-text-secondary">{formatNumber(p.requiredStock)}</span>
