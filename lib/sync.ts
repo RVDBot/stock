@@ -107,15 +107,31 @@ export async function syncProducts() {
       const stock = p.stock_quantity ?? 0
       const price = parseFloat(p.price) || 0
 
-      // Clean up all possible conflicts before upserting:
-      // 1. Remove any OTHER product that has this SKU
-      db.prepare('DELETE FROM products WHERE sku = ? AND woo_product_id != ?').run(p.sku, p.id)
-      // 2. Remove duplicate records for this woo_product_id (keep only the oldest)
-      db.prepare(`DELETE FROM products WHERE woo_product_id = ? AND id NOT IN (
-        SELECT MIN(id) FROM products WHERE woo_product_id = ?
-      )`).run(p.id, p.id)
-      // 3. If remaining record has wrong SKU, update it
-      db.prepare('UPDATE products SET sku = ? WHERE woo_product_id = ? AND sku != ?').run(p.sku, p.id, p.sku)
+      // Find existing records that could conflict
+      const existingBySku = db.prepare('SELECT id, woo_product_id FROM products WHERE sku = ?').get(p.sku) as { id: number; woo_product_id: number } | undefined
+      const existingByWooId = db.prepare('SELECT id, sku FROM products WHERE woo_product_id = ?').get(p.id) as { id: number; sku: string } | undefined
+
+      if (existingByWooId && existingByWooId.sku !== p.sku) {
+        // This woo_product_id exists with a different SKU (SKU changed in WooCommerce)
+        if (existingBySku && existingBySku.id !== existingByWooId.id) {
+          // Another record already has the target SKU — merge: move its references to our record, then reassign
+          const oldId = existingBySku.id
+          const keepId = existingByWooId.id
+          db.prepare('UPDATE stock_snapshots SET product_id = ? WHERE product_id = ? AND date NOT IN (SELECT date FROM stock_snapshots WHERE product_id = ?)').run(keepId, oldId, keepId)
+          db.prepare('DELETE FROM stock_snapshots WHERE product_id = ?').run(oldId)
+          db.prepare('UPDATE sales_history SET product_id = ? WHERE product_id = ? AND date NOT IN (SELECT date FROM sales_history WHERE product_id = ?)').run(keepId, oldId, keepId)
+          db.prepare('DELETE FROM sales_history WHERE product_id = ?').run(oldId)
+          db.prepare('UPDATE purchase_orders SET product_id = ? WHERE product_id = ?').run(keepId, oldId)
+          db.prepare('DELETE FROM products WHERE id = ?').run(oldId)
+          log('info', `Product ${oldId} (sku=${p.sku}) samengevoegd met ${keepId} (woo_id=${p.id})`)
+        }
+        // Update the SKU on our existing record
+        db.prepare('UPDATE products SET sku = ? WHERE id = ?').run(p.sku, existingByWooId.id)
+        log('info', `SKU gewijzigd: "${existingByWooId.sku}" → "${p.sku}" (woo_id=${p.id})`)
+      } else if (!existingByWooId && existingBySku) {
+        // New woo_product_id claiming an existing SKU — update the existing record's woo_product_id
+        db.prepare('UPDATE products SET woo_product_id = ? WHERE id = ?').run(p.id, existingBySku.id)
+      }
 
       upsertProduct.run(p.id, p.sku, p.name, stock, price, p.id, p.name, stock, price)
 
@@ -125,11 +141,11 @@ export async function syncProducts() {
       synced++
     }
 
-    // Remove products that no longer exist in WooCommerce
-    const removed = db.prepare('DELETE FROM products WHERE woo_product_id NOT IN (SELECT value FROM json_each(?)) AND active = 1')
+    // Mark products that no longer exist in WooCommerce as inactive (don't delete — preserves history)
+    const deactivated = db.prepare('UPDATE products SET active = 0 WHERE woo_product_id NOT IN (SELECT value FROM json_each(?)) AND active = 1')
       .run(JSON.stringify([...syncedWooIds]))
-    if (removed.changes > 0) {
-      log('info', `Sync: ${removed.changes} verwijderde producten opgeruimd`)
+    if (deactivated.changes > 0) {
+      log('info', `Sync: ${deactivated.changes} producten gedeactiveerd (niet meer in WooCommerce)`)
     }
   })()
 
