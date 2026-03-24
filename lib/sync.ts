@@ -68,9 +68,11 @@ export async function syncProducts() {
     }
   }
 
-  // Handle composite SKUs (A+B):
-  // - If both A and B exist as standalone products → skip (it's a bundle)
-  // - Otherwise → use first part (A) as the real SKU
+  // Handle composite SKUs (A+B, A+B+C, etc.):
+  // - Each part that exists as standalone → already tracked, skip it
+  // - Each part that does NOT exist as standalone → this composite IS that product
+  // - If ALL parts exist as standalone → hide composite entirely
+  // - If NO parts exist as standalone → keep composite with original SKU (fallback)
   const standaloneSKUs = new Set<string>()
   for (const sku of skuMap.keys()) {
     if (!sku.includes('+')) standaloneSKUs.add(sku)
@@ -81,16 +83,21 @@ export async function syncProducts() {
   for (const [sku, product] of skuMap) {
     if (!sku.includes('+')) continue
     const parts = sku.split('+').map(s => s.trim())
-    const allPartsExist = parts.every(part => standaloneSKUs.has(part))
-    if (allPartsExist) {
+    const missingParts = parts.filter(part => !standaloneSKUs.has(part))
+
+    if (missingParts.length === 0) {
+      // All parts exist as standalone — composite is a bundle, hide it
       compositesToRemove.push(sku)
-      log('info', `Samengesteld product ${sku} overgeslagen: alle delen bestaan als apart product`)
-    } else {
-      const realSku = parts[0]
+      log('info', `Samengesteld product ${sku} verborgen: alle delen bestaan als apart product`)
+    } else if (missingParts.length < parts.length) {
+      // Some parts exist standalone, some don't — each missing part becomes a product
       compositesToRemove.push(sku)
-      compositesToRemap.push({ oldSku: sku, newSku: realSku, product: { ...product, sku: realSku } })
-      log('info', `Samengesteld product ${sku} → SKU vereenvoudigd naar ${realSku}`)
+      for (const missingSku of missingParts) {
+        compositesToRemap.push({ oldSku: sku, newSku: missingSku, product: { ...product, sku: missingSku } })
+        log('info', `Samengesteld product ${sku} → ${missingSku} (niet als apart product gevonden)`)
+      }
     }
+    // else: no parts exist standalone → keep composite with original SKU (no action needed)
   }
   for (const sku of compositesToRemove) skuMap.delete(sku)
   for (const { newSku, product } of compositesToRemap) {
