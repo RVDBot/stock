@@ -1,4 +1,5 @@
 import { getDb } from '@/lib/db'
+import { log } from '@/lib/logger'
 
 interface Event {
   expected_date: string | null
@@ -27,7 +28,10 @@ export function calculateOrderList(supplierId: number): {
     order_cycle_days: number
   } | undefined
 
-  if (!supplier) return { coverageDays: 0, products: [] }
+  if (!supplier) {
+    log('warn', `Bestellijst: fabrikant ${supplierId} niet gevonden`)
+    return { coverageDays: 0, products: [] }
+  }
 
   const settings = db.prepare("SELECT key, value FROM settings WHERE key IN ('warehouse_inbound_days', 'safety_margin_days')").all() as { key: string; value: string }[]
   const settingsMap = Object.fromEntries(settings.map(s => [s.key, s.value]))
@@ -36,8 +40,12 @@ export function calculateOrderList(supplierId: number): {
 
   const coverageDays = supplier.lead_time_days + warehouseInbound + safetyMargin + supplier.order_cycle_days
 
-  // Get all active events
-  const events = db.prepare('SELECT expected_date, duration_days, impact_percentage FROM events WHERE expected_date IS NOT NULL').all() as Event[]
+  // Get all active events with sub-event impact
+  const events = db.prepare(`
+    SELECT expected_date, duration_days, impact_percentage
+    FROM events
+    WHERE expected_date IS NOT NULL
+  `).all() as Event[]
 
   // Get products for this supplier
   const products = db.prepare(`
@@ -45,6 +53,8 @@ export function calculateOrderList(supplierId: number): {
     FROM products
     WHERE supplier_id = ? AND active = 1
   `).all() as { id: number; sku: string; name: string; current_stock: number; manual_daily_sales: number | null }[]
+
+  log('info', `Bestellijst fabrikant ${supplierId}: ${products.length} producten, coverageDays=${coverageDays} (lead=${supplier.lead_time_days} + inbound=${warehouseInbound} + marge=${safetyMargin} + cyclus=${supplier.order_cycle_days})`)
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)
