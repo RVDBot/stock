@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo, use } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef, use } from 'react'
 import Nav from '@/components/Nav'
 
 interface Supplier {
@@ -149,6 +149,9 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   const [bulkTemplate, setBulkTemplate] = useState<{ templateId: number; fields: TemplateField[]; baseSpecs: Record<string, string> } | null>(null)
   const [bulkOverrides, setBulkOverrides] = useState<Record<string, Record<string, string>>>({})
   const [bulkSaving, setBulkSaving] = useState(false)
+  const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set()) // "productId:fieldName"
+  const [lastClickedCell, setLastClickedCell] = useState<string | null>(null)
+  const [copiedValues, setCopiedValues] = useState<string[]>([])
 
   // Templates
   const [specTemplates, setSpecTemplates] = useState<SpecTemplate[]>([])
@@ -157,6 +160,79 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   const [templateName, setTemplateName] = useState('')
   const [templateFields, setTemplateFields] = useState<TemplateField[]>([])
   const [templateSaving, setTemplateSaving] = useState(false)
+
+  // Bulk edit: ordered list of all editable cell keys for range selection
+  const bulkEditableRef = useRef<{ sortedProducts: ProductStatus[]; editableFields: TemplateField[] }>({ sortedProducts: [], editableFields: [] })
+  const allCellKeys = useMemo(() => {
+    if (!bulkEditing || !bulkTemplate) return []
+    const sorted = products.filter(p => selectedProducts.has(p.productId)).sort((a, b) => a.sku.localeCompare(b.sku))
+    const fields = bulkTemplate.fields.filter(f => f.type !== 'fixed')
+    bulkEditableRef.current = { sortedProducts: sorted, editableFields: fields }
+    return sorted.flatMap(p => fields.map(f => `${p.productId}:${f.name}`))
+  }, [bulkEditing, bulkTemplate, products, selectedProducts])
+
+  const handleCellClick = useCallback((cellKey: string, e: React.MouseEvent) => {
+    if (e.shiftKey && lastClickedCell) {
+      // Range select from lastClickedCell to this cell
+      const startIdx = allCellKeys.indexOf(lastClickedCell)
+      const endIdx = allCellKeys.indexOf(cellKey)
+      if (startIdx >= 0 && endIdx >= 0) {
+        const from = Math.min(startIdx, endIdx)
+        const to = Math.max(startIdx, endIdx)
+        setSelectedCells(new Set(allCellKeys.slice(from, to + 1)))
+      }
+    } else {
+      setSelectedCells(new Set([cellKey]))
+    }
+    setLastClickedCell(cellKey)
+  }, [allCellKeys, lastClickedCell])
+
+  // Keyboard handler for Ctrl+C / Ctrl+V in bulk edit
+  useEffect(() => {
+    if (!bulkEditing || !bulkTemplate) return
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (!bulkTemplate) return
+      const isMeta = e.metaKey || e.ctrlKey
+
+      if (isMeta && e.key === 'c' && selectedCells.size > 0) {
+        // Copy: get values of selected cells in order
+        const ordered = allCellKeys.filter(k => selectedCells.has(k))
+        const values = ordered.map(k => {
+          const [pid, ...fParts] = k.split(':')
+          const fieldName = fParts.join(':')
+          return bulkOverrides[pid]?.[fieldName] ?? bulkTemplate.baseSpecs[fieldName] ?? ''
+        })
+        setCopiedValues(values)
+        e.preventDefault()
+      }
+
+      if (isMeta && e.key === 'v' && selectedCells.size > 0 && copiedValues.length > 0) {
+        // Paste: fill selected cells with copied values (repeating pattern)
+        const ordered = allCellKeys.filter(k => selectedCells.has(k))
+        setBulkOverrides(prev => {
+          const next = { ...prev }
+          ordered.forEach((k, i) => {
+            const value = copiedValues[i % copiedValues.length]
+            const [pid, ...fParts] = k.split(':')
+            const fieldName = fParts.join(':')
+            if (!next[pid]) next[pid] = {}
+            if (value === bulkTemplate!.baseSpecs[fieldName]) {
+              delete next[pid][fieldName]
+              if (Object.keys(next[pid]).length === 0) delete next[pid]
+            } else {
+              next[pid] = { ...next[pid], [fieldName]: value }
+            }
+          })
+          return next
+        })
+        e.preventDefault()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [bulkEditing, bulkTemplate, selectedCells, allCellKeys, copiedValues, bulkOverrides])
 
   function loadData() {
     setLoading(true)
@@ -811,7 +887,14 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                 {bulkEditing && bulkTemplate && (
                   <div className="bg-surface-1 rounded-2xl border border-accent/30 p-4 mb-3 animate-row">
                     <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-[14px] font-semibold text-text-primary">Specs bewerken — {selectedProducts.size} producten</h3>
+                      <div>
+                        <h3 className="text-[14px] font-semibold text-text-primary">Specs bewerken — {selectedProducts.size} producten</h3>
+                        <p className="text-[11px] text-text-tertiary mt-0.5">
+                          Klik om te selecteren, shift+klik voor bereik. ⌘C kopiëren, ⌘V plakken.
+                          {copiedValues.length > 0 && <span className="text-accent ml-1">{copiedValues.length} gekopieerd</span>}
+                          {selectedCells.size > 0 && <span className="text-text-secondary ml-1">({selectedCells.size} geselecteerd)</span>}
+                        </p>
+                      </div>
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => { setBulkEditing(false); setBulkTemplate(null) }}
@@ -846,11 +929,17 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                                 <span className="text-text-primary text-[12px] ml-2">{p.name}</span>
                               </td>
                               {bulkTemplate.fields.filter(f => f.type !== 'fixed').map(f => {
+                                const cellKey = `${p.productId}:${f.name}`
                                 const override = bulkOverrides[String(p.productId)]?.[f.name]
                                 const value = override ?? bulkTemplate.baseSpecs[f.name] ?? ''
                                 const isOverridden = override !== undefined && override !== bulkTemplate.baseSpecs[f.name]
+                                const isSelected = selectedCells.has(cellKey)
                                 return (
-                                  <td key={f.name} className="py-2 px-2">
+                                  <td
+                                    key={f.name}
+                                    className={`py-1 px-1 cursor-cell ${isSelected ? 'bg-accent/10' : ''}`}
+                                    onClick={e => { e.stopPropagation(); handleCellClick(cellKey, e) }}
+                                  >
                                     {f.type === 'select' ? (
                                       <select
                                         value={value}
@@ -868,7 +957,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                                             return next
                                           })
                                         }}
-                                        className={`w-full text-[12px] px-2 py-1 rounded bg-surface-0 border text-text-primary ${isOverridden ? 'border-accent' : 'border-border-subtle'}`}
+                                        className={`w-full text-[12px] px-2 py-1 rounded bg-surface-0 border text-text-primary ${isSelected ? 'border-accent ring-1 ring-accent/40' : isOverridden ? 'border-accent' : 'border-border-subtle'}`}
                                       >
                                         <option value="">—</option>
                                         {(f.options || []).map(opt => (
@@ -894,7 +983,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                                             return next
                                           })
                                         }}
-                                        className={`w-full text-[12px] px-2 py-1 rounded bg-surface-0 border text-text-primary min-w-[80px] ${isOverridden ? 'border-accent' : 'border-border-subtle'}`}
+                                        className={`w-full text-[12px] px-2 py-1 rounded bg-surface-0 border text-text-primary min-w-[80px] ${isSelected ? 'border-accent ring-1 ring-accent/40' : isOverridden ? 'border-accent' : 'border-border-subtle'}`}
                                       />
                                     )}
                                   </td>
