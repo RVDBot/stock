@@ -144,6 +144,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   const [selectedProducts, setSelectedProducts] = useState<Set<number>>(new Set())
   const [sourceProductId, setSourceProductId] = useState<number | ''>('')
   const [productsWithSpecs, setProductsWithSpecs] = useState<{ productId: number; sku: string; name: string }[]>([])
+  const productsWithSpecsIds = useMemo(() => new Set(productsWithSpecs.map(p => p.productId)), [productsWithSpecs])
   const [bulkEditing, setBulkEditing] = useState(false)
   const [bulkTemplate, setBulkTemplate] = useState<{ templateId: number; fields: TemplateField[]; baseSpecs: Record<string, string> } | null>(null)
   const [bulkOverrides, setBulkOverrides] = useState<Record<string, Record<string, string>>>({})
@@ -949,6 +950,9 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                                 {style.label}
                               </span>
                               <a href={bulkMode ? undefined : `/products/${p.productId}`} className={`text-text-primary text-[14px] font-semibold ${bulkMode ? '' : 'hover:text-accent transition-colors'}`}>{p.name}</a>
+                              {bulkMode && productsWithSpecsIds.has(p.productId) && (
+                                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-success/10 text-success border border-success/20">specs</span>
+                              )}
                             </div>
                             <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-text-secondary ${bulkMode ? 'ml-0' : 'ml-8'}`}>
                               <span className="text-text-tertiary font-mono text-[11px]">{p.sku}</span>
