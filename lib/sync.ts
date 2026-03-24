@@ -107,17 +107,16 @@ export async function syncProducts() {
       const stock = p.stock_quantity ?? 0
       const price = parseFloat(p.price) || 0
 
-      // Resolve any SKU conflicts before upserting
-      const existingByWooId = db.prepare('SELECT id, sku FROM products WHERE woo_product_id = ?').get(p.id) as { id: number; sku: string } | undefined
-      if (existingByWooId && existingByWooId.sku !== p.sku) {
-        // SKU changed — remove conflicting record with target SKU, then update our record
-        db.prepare('DELETE FROM products WHERE sku = ? AND woo_product_id != ?').run(p.sku, p.id)
-        db.prepare('UPDATE products SET sku = ? WHERE woo_product_id = ?').run(p.sku, p.id)
-        log('info', `SKU gewijzigd: "${existingByWooId.sku}" → "${p.sku}" (woo_id=${p.id})`)
-      } else if (!existingByWooId) {
-        // New product — remove any stale record with this SKU from a different product
-        db.prepare('DELETE FROM products WHERE sku = ? AND woo_product_id != ?').run(p.sku, p.id)
-      }
+      // Clean up all possible conflicts before upserting:
+      // 1. Remove any OTHER product that has this SKU
+      db.prepare('DELETE FROM products WHERE sku = ? AND woo_product_id != ?').run(p.sku, p.id)
+      // 2. Remove duplicate records for this woo_product_id (keep only the oldest)
+      db.prepare(`DELETE FROM products WHERE woo_product_id = ? AND id NOT IN (
+        SELECT MIN(id) FROM products WHERE woo_product_id = ?
+      )`).run(p.id, p.id)
+      // 3. If remaining record has wrong SKU, update it
+      db.prepare('UPDATE products SET sku = ? WHERE woo_product_id = ? AND sku != ?').run(p.sku, p.id, p.sku)
+
       upsertProduct.run(p.id, p.sku, p.name, stock, price, p.id, p.name, stock, price)
 
       const row = db.prepare('SELECT id FROM products WHERE sku = ?').get(p.sku) as { id: number }
