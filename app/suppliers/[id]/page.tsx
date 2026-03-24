@@ -149,6 +149,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   const [bulkTemplate, setBulkTemplate] = useState<{ templateId: number; fields: TemplateField[]; baseSpecs: Record<string, string> } | null>(null)
   const [bulkOverrides, setBulkOverrides] = useState<Record<string, Record<string, string>>>({})
   const [bulkSaving, setBulkSaving] = useState(false)
+  const [lastClickedProduct, setLastClickedProduct] = useState<number | null>(null)
   const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set()) // "productId:fieldName"
   const [lastClickedCell, setLastClickedCell] = useState<string | null>(null)
   const [copiedValues, setCopiedValues] = useState<string[]>([])
@@ -160,6 +161,8 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   const [templateName, setTemplateName] = useState('')
   const [templateFields, setTemplateFields] = useState<TemplateField[]>([])
   const [templateSaving, setTemplateSaving] = useState(false)
+
+  const sortedProducts = useMemo(() => [...products].sort((a, b) => a.sku.localeCompare(b.sku)), [products])
 
   // Bulk edit: ordered list of all editable cell keys for range selection
   const bulkEditableRef = useRef<{ sortedProducts: ProductStatus[]; editableFields: TemplateField[] }>({ sortedProducts: [], editableFields: [] })
@@ -999,7 +1002,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {products.map((p, i) => {
+                  {(bulkMode ? sortedProducts : products).map((p, i) => {
                     const style = STATUS_STYLES[p.status]
                     const productOrders = getOrdersForProduct(p.productId)
                     return (
@@ -1009,13 +1012,28 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                           bulkMode && selectedProducts.has(p.productId) ? 'border-accent/50' : 'border-border-subtle'
                         }`}
                         style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
-                        onClick={bulkMode ? () => {
-                          setSelectedProducts(prev => {
-                            const next = new Set(prev)
-                            if (next.has(p.productId)) next.delete(p.productId)
-                            else next.add(p.productId)
-                            return next
-                          })
+                        onClick={bulkMode ? (e) => {
+                          if (e.shiftKey && lastClickedProduct !== null) {
+                            const startIdx = sortedProducts.findIndex(sp => sp.productId === lastClickedProduct)
+                            const endIdx = sortedProducts.findIndex(sp => sp.productId === p.productId)
+                            if (startIdx >= 0 && endIdx >= 0) {
+                              const from = Math.min(startIdx, endIdx)
+                              const to = Math.max(startIdx, endIdx)
+                              setSelectedProducts(prev => {
+                                const next = new Set(prev)
+                                for (let j = from; j <= to; j++) next.add(sortedProducts[j].productId)
+                                return next
+                              })
+                            }
+                          } else {
+                            setSelectedProducts(prev => {
+                              const next = new Set(prev)
+                              if (next.has(p.productId)) next.delete(p.productId)
+                              else next.add(p.productId)
+                              return next
+                            })
+                          }
+                          setLastClickedProduct(p.productId)
                         } : undefined}
                       >
                         <div className="flex items-start justify-between gap-3">
