@@ -838,7 +838,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                           </tr>
                         </thead>
                         <tbody>
-                          {products.filter(p => selectedProducts.has(p.productId)).map(p => (
+                          {products.filter(p => selectedProducts.has(p.productId)).sort((a, b) => a.sku.localeCompare(b.sku)).map(p => (
                             <tr key={p.productId} className="border-t border-border-subtle">
                               <td className="py-2 pr-3 sticky left-0 bg-surface-1">
                                 <span className="text-text-tertiary font-mono text-[10px]">{p.sku}</span>
