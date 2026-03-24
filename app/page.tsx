@@ -34,6 +34,7 @@ const STATUS_STYLES = {
 
 export default function AlertsPage() {
   const [products, setProducts] = useState<ProductStatus[]>([])
+  const [ignoredProducts, setIgnoredProducts] = useState<{ productId: number; sku: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [lastSyncAt, setLastSyncAt] = useState('')
@@ -47,9 +48,11 @@ export default function AlertsPage() {
     setLoading(true)
     Promise.all([
       fetch('/api/products').then(r => r.json()),
+      fetch('/api/products?inactive=1').then(r => r.json()),
       fetch('/api/settings').then(r => r.json()),
-    ]).then(([prodData, settData]) => {
+    ]).then(([prodData, inactiveData, settData]) => {
       setProducts(Array.isArray(prodData) ? prodData : prodData.products || [])
+      setIgnoredProducts(Array.isArray(inactiveData) ? inactiveData : [])
       const settings = settData.settings || {}
       setLastSyncAt(settings.last_sync_at || '')
       setLastSyncStatus(settings.last_sync_status || '')
@@ -109,6 +112,15 @@ export default function AlertsPage() {
     return filtered
   }, [products, search])
 
+  const matchingIgnored = useMemo(() => {
+    if (!search) return []
+    const q = search.toLowerCase()
+    return ignoredProducts.filter(p =>
+      p.sku.toLowerCase().includes(q) ||
+      p.name.toLowerCase().includes(q)
+    )
+  }, [ignoredProducts, search])
+
   const summary = useMemo(() => ({
     orderNow: products.filter(p => p.status === 'order_now').length,
     soon: products.filter(p => p.status === 'soon').length,
@@ -151,7 +163,9 @@ export default function AlertsPage() {
             className="w-full text-[13px] px-3 py-2 rounded-lg bg-surface-1 border border-border-subtle text-text-primary outline-none focus:border-accent transition-colors"
           />
           {search && (
-            <p className="text-text-tertiary text-[12px] mt-1.5">{alerts.length} resultaten</p>
+            <p className="text-text-tertiary text-[12px] mt-1.5">
+              {alerts.length} resultaten{matchingIgnored.length > 0 && ` + ${matchingIgnored.length} genegeerd`}
+            </p>
           )}
         </div>
 
@@ -269,6 +283,39 @@ export default function AlertsPage() {
                 </div>
               )
             })}
+          </div>
+        )}
+
+        {/* Ignored products matching search */}
+        {matchingIgnored.length > 0 && (
+          <div className="mt-4 space-y-2 opacity-40">
+            <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider px-1">Genegeerd</p>
+            {matchingIgnored.map(p => (
+              <div
+                key={p.productId}
+                className="bg-surface-1 rounded-2xl border border-border-subtle p-4"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-text-tertiary font-mono text-[11px]">{p.sku}</span>
+                    <span className="text-text-secondary text-[13px]">{p.name}</span>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      await fetch('/api/products', {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ids: [p.productId], active: 1 }),
+                      })
+                      loadData()
+                    }}
+                    className="text-[11px] text-accent hover:text-accent-hover transition-colors"
+                  >
+                    Herstellen
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </main>
