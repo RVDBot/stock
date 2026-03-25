@@ -15,9 +15,11 @@ RUN npm run build
 FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+RUN addgroup --system app && adduser --system --ingroup app app
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder --chown=app:app /app/.next/standalone ./
+COPY --from=builder --chown=app:app /app/.next/static ./.next/static
+USER app
 EXPOSE 3100
 ENV PORT=3100
 CMD ["node", "server.js"]

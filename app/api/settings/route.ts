@@ -2,8 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-guard'
 import { getDb } from '@/lib/db'
 
-const SECRET_KEYS = ['auth_password_hash', 'auth_session_token']
 const READ_SECRET_KEYS = ['auth_password_hash', 'auth_session_token', 'woo_consumer_secret', 'claude_api_key']
+
+const ALLOWED_WRITE_KEYS = new Set([
+  'woo_url', 'woo_consumer_key', 'woo_consumer_secret',
+  'claude_api_key', 'ai_max_tokens_per_lookup',
+  'warehouse_inbound_days', 'safety_margin_days',
+  'last_sync_at', 'last_sync_status',
+  'ai_total_input_tokens', 'ai_total_output_tokens',
+])
 
 export async function GET(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
@@ -41,7 +48,7 @@ export async function PUT(req: NextRequest) {
     const upsert = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?')
     const tx = db.transaction((entries: [string, string][]) => {
       for (const [key, value] of entries) {
-        if (SECRET_KEYS.includes(key)) continue
+        if (!ALLOWED_WRITE_KEYS.has(key)) continue
         upsert.run(key, String(value), String(value))
       }
     })
@@ -56,7 +63,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'key is verplicht' }, { status: 400 })
   }
 
-  if (SECRET_KEYS.includes(key)) {
+  if (!ALLOWED_WRITE_KEYS.has(key)) {
     return NextResponse.json({ error: 'Deze instelling kan niet via deze route worden aangepast' }, { status: 403 })
   }
 

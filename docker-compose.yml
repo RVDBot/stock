@@ -7,6 +7,6 @@ services:
       - ./data:/app/data
     environment:
       - DATABASE_PATH=/app/data/stock-dashboard.db
-      - CRON_SECRET=changeme
+      - CRON_SECRET=${CRON_SECRET:?Set CRON_SECRET in .env (min 16 chars)}
       - PORT=3100
     restart: unless-stopped

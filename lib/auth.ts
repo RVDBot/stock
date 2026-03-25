@@ -32,5 +32,11 @@ export function validateSession(token: string): boolean {
   if (!token) return false
   const db = getDb()
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('auth_session_token') as { value: string } | undefined
-  return row?.value === token
+  if (!row?.value || token.length !== row.value.length) return false
+  return crypto.timingSafeEqual(Buffer.from(token), Buffer.from(row.value))
+}
+
+export function clearSession(): void {
+  const db = getDb()
+  db.prepare("DELETE FROM settings WHERE key = 'auth_session_token'").run()
 }

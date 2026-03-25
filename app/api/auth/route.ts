@@ -1,6 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
-import { hashPassword, verifyPassword, isPasswordSet, createSession, validateSession } from '@/lib/auth'
+import { hashPassword, verifyPassword, isPasswordSet, createSession, validateSession, clearSession } from '@/lib/auth'
+
+const LOGIN_WINDOW_MS = 60_000
+const MAX_LOGIN_ATTEMPTS = 5
+const loginAttempts = new Map<string, { count: number; firstAttempt: number }>()
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now()
+  const entry = loginAttempts.get(ip)
+  if (!entry || now - entry.firstAttempt > LOGIN_WINDOW_MS) {
+    loginAttempts.set(ip, { count: 1, firstAttempt: now })
+    return false
+  }
+  entry.count++
+  return entry.count > MAX_LOGIN_ATTEMPTS
+}
+
+function getSessionCookieOptions(req: NextRequest) {
+  const isSecure = req.headers.get('x-forwarded-proto') === 'https' || req.nextUrl.protocol === 'https:'
+  return {
+    httpOnly: true,
+    sameSite: 'lax' as const,
+    path: '/',
+    secure: isSecure,
+    maxAge: 60 * 60 * 24 * 30,
+  }
+}
 
 export async function GET(req: NextRequest) {
   const sessionToken = req.cookies.get('session')?.value || ''
@@ -12,6 +38,13 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const { action, password } = await req.json()
+
+  if (action === 'logout') {
+    clearSession()
+    const res = NextResponse.json({ ok: true })
+    res.cookies.set('session', '', { path: '/', maxAge: 0 })
+    return res
+  }
 
   if (action === 'setup') {
     if (isPasswordSet()) {
@@ -26,17 +59,15 @@ export async function POST(req: NextRequest) {
       .run('auth_password_hash', hash, hash)
     const token = createSession()
     const res = NextResponse.json({ ok: true })
-    res.cookies.set('session', token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
-      secure: false,
-      maxAge: 60 * 60 * 24 * 30,
-    })
+    res.cookies.set('session', token, getSessionCookieOptions(req))
     return res
   }
 
   if (action === 'login') {
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown'
+    if (isRateLimited(ip)) {
+      return NextResponse.json({ error: 'Te veel inlogpogingen. Probeer het over een minuut opnieuw.' }, { status: 429 })
+    }
     if (!isPasswordSet()) {
       return NextResponse.json({ error: 'Stel eerst een wachtwoord in' }, { status: 400 })
     }
@@ -47,13 +78,7 @@ export async function POST(req: NextRequest) {
     }
     const token = createSession()
     const res = NextResponse.json({ ok: true })
-    res.cookies.set('session', token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
-      secure: false,
-      maxAge: 60 * 60 * 24 * 30,
-    })
+    res.cookies.set('session', token, getSessionCookieOptions(req))
     return res
   }
 

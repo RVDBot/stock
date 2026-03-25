@@ -14,8 +14,27 @@ export function middleware(req: NextRequest) {
   }
 
   const session = req.cookies.get('session')?.value
-  if (!session) {
+  if (!session || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(session)) {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Niet ingelogd' }, { status: 401 })
+    }
     return NextResponse.redirect(new URL('/login', req.url))
+  }
+
+  // Add CSRF protection: reject state-changing requests without matching Origin
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    const origin = req.headers.get('origin')
+    const host = req.headers.get('host')
+    if (origin && host) {
+      try {
+        const originHost = new URL(origin).host
+        if (originHost !== host) {
+          return NextResponse.json({ error: 'CSRF rejected' }, { status: 403 })
+        }
+      } catch {
+        return NextResponse.json({ error: 'CSRF rejected' }, { status: 403 })
+      }
+    }
   }
 
   return NextResponse.next()

@@ -4,6 +4,10 @@ import { getDb } from '@/lib/db'
 import Anthropic from '@anthropic-ai/sdk'
 import { log } from '@/lib/logger'
 
+const LOOKUP_WINDOW_MS = 60_000
+const MAX_LOOKUPS = 10
+const lookupCounts = new Map<string, { count: number; firstCall: number }>()
+
 function getSettingInt(db: ReturnType<typeof getDb>, key: string, fallback: number): number {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined
   return row ? parseInt(row.value, 10) || fallback : fallback
@@ -19,6 +23,18 @@ function addTokenUsage(db: ReturnType<typeof getDb>, input: number, output: numb
 
 export async function POST(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
+
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
+  const ts = Date.now()
+  const entry = lookupCounts.get(ip)
+  if (entry && ts - entry.firstCall < LOOKUP_WINDOW_MS) {
+    entry.count++
+    if (entry.count > MAX_LOOKUPS) {
+      return NextResponse.json({ error: 'Te veel verzoeken. Probeer het over een minuut opnieuw.' }, { status: 429 })
+    }
+  } else {
+    lookupCounts.set(ip, { count: 1, firstCall: ts })
+  }
 
   const { id } = await req.json()
   if (!id) {
@@ -87,6 +103,6 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     log('error', `AI datum lookup mislukt voor "${eventLabel}": ${msg}`)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return NextResponse.json({ error: 'AI lookup mislukt. Controleer de API key en probeer opnieuw.' }, { status: 500 })
   }
 }
