@@ -969,13 +969,13 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                         </button>
                       </div>
                     </div>
-                    <div className="overflow-x-auto">
+                    <div className="overflow-auto max-h-[70vh]">
                       <table className="w-full text-[12px]">
-                        <thead>
+                        <thead className="sticky top-0 z-10 bg-surface-1">
                           <tr className="text-[11px] text-text-tertiary font-semibold uppercase tracking-wider">
                             <th className="text-left py-2 pr-3 sticky left-0 bg-surface-1">Product</th>
                             {bulkTemplate.fields.filter(f => f.type !== 'fixed').map(f => (
-                              <th key={f.name} className="text-left py-2 px-2 whitespace-nowrap">{f.name}</th>
+                              <th key={f.name} className="text-left py-2 px-2 whitespace-nowrap bg-surface-1">{f.name}</th>
                             ))}
                           </tr>
                         </thead>
