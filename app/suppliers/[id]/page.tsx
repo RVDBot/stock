@@ -176,13 +176,32 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
 
   const handleCellClick = useCallback((cellKey: string, e: React.MouseEvent) => {
     if (e.shiftKey && lastClickedCell) {
-      // Range select from lastClickedCell to this cell
-      const startIdx = allCellKeys.indexOf(lastClickedCell)
-      const endIdx = allCellKeys.indexOf(cellKey)
-      if (startIdx >= 0 && endIdx >= 0) {
-        const from = Math.min(startIdx, endIdx)
-        const to = Math.max(startIdx, endIdx)
-        setSelectedCells(new Set(allCellKeys.slice(from, to + 1)))
+      const [, ...startFieldParts] = lastClickedCell.split(':')
+      const [, ...endFieldParts] = cellKey.split(':')
+      const startField = startFieldParts.join(':')
+      const endField = endFieldParts.join(':')
+
+      if (startField === endField) {
+        // Same column: select only cells in this column between the two rows
+        const { sortedProducts } = bulkEditableRef.current
+        const startRow = sortedProducts.findIndex(p => lastClickedCell.startsWith(`${p.productId}:`))
+        const endRow = sortedProducts.findIndex(p => cellKey.startsWith(`${p.productId}:`))
+        if (startRow >= 0 && endRow >= 0) {
+          const from = Math.min(startRow, endRow)
+          const to = Math.max(startRow, endRow)
+          const cells = new Set<string>()
+          for (let r = from; r <= to; r++) cells.add(`${sortedProducts[r].productId}:${startField}`)
+          setSelectedCells(cells)
+        }
+      } else {
+        // Different columns: select rectangular range (all cells between)
+        const startIdx = allCellKeys.indexOf(lastClickedCell)
+        const endIdx = allCellKeys.indexOf(cellKey)
+        if (startIdx >= 0 && endIdx >= 0) {
+          const from = Math.min(startIdx, endIdx)
+          const to = Math.max(startIdx, endIdx)
+          setSelectedCells(new Set(allCellKeys.slice(from, to + 1)))
+        }
       }
     } else {
       setSelectedCells(new Set([cellKey]))
