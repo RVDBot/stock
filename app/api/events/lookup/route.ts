@@ -3,6 +3,7 @@ import { requireAuth } from '@/lib/auth-guard'
 import { getDb } from '@/lib/db'
 import Anthropic from '@anthropic-ai/sdk'
 import { log } from '@/lib/logger'
+import { decryptValue } from '@/lib/encrypt'
 
 const LOOKUP_WINDOW_MS = 60_000
 const MAX_LOOKUPS = 10
@@ -51,7 +52,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Event met id ${id} niet gevonden` }, { status: 404 })
   }
 
-  const apiKey = (db.prepare("SELECT value FROM settings WHERE key = 'claude_api_key'").get() as { value: string } | undefined)?.value
+  const apiKeyRaw = (db.prepare("SELECT value FROM settings WHERE key = 'claude_api_key'").get() as { value: string } | undefined)?.value
+  const apiKey = apiKeyRaw ? decryptValue(apiKeyRaw) : undefined
   if (!apiKey) {
     return NextResponse.json({ error: 'Claude API key niet geconfigureerd. Ga naar Instellingen.' }, { status: 400 })
   }

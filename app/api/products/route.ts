@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-guard'
 import { getDb } from '@/lib/db'
 import { getAllProductStatuses, getProductStatusesBySupplier } from '@/lib/stock-status'
+import { isPositiveInt, isIntArray, isInt } from '@/lib/validate'
 
 export async function GET(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
@@ -12,6 +13,8 @@ export async function GET(req: NextRequest) {
 
   // Return single product with specs
   if (productId) {
+    const parsed = parseInt(productId, 10)
+    if (!isPositiveInt(parsed)) return NextResponse.json({ error: 'Ongeldig id' }, { status: 400 })
     const db = getDb()
     const product = db.prepare(`
       SELECT p.*, s.name as supplier_name, s.lead_time_days,
@@ -20,7 +23,7 @@ export async function GET(req: NextRequest) {
       LEFT JOIN suppliers s ON p.supplier_id = s.id
       LEFT JOIN spec_templates st ON p.spec_template_id = st.id
       WHERE p.id = ?
-    `).get(parseInt(productId, 10))
+    `).get(parsed)
     if (!product) return NextResponse.json({ error: 'Niet gevonden' }, { status: 404 })
     return NextResponse.json(product)
   }
@@ -61,31 +64,31 @@ export async function PATCH(req: NextRequest) {
 
   // Bulk operations: { ids: [1, 2, 3], supplier_id?: 5, active?: 0 }
   if (Array.isArray(body.ids)) {
-    if (body.ids.length === 0) {
-      return NextResponse.json({ error: 'Geen producten geselecteerd' }, { status: 400 })
+    if (!isIntArray(body.ids)) {
+      return NextResponse.json({ error: 'ids moet een array van gehele getallen zijn (max 10.000)' }, { status: 400 })
     }
 
     // Bulk set active/inactive
     if (body.active !== undefined) {
+      const active = body.active === 1 ? 1 : 0
       const stmt = db.prepare('UPDATE products SET active = ? WHERE id = ?')
       const tx = db.transaction((ids: number[]) => {
-        for (const id of ids) stmt.run(body.active, id)
+        for (const id of ids) stmt.run(active, id)
       })
       tx(body.ids)
       return NextResponse.json({ success: true, updated: body.ids.length })
     }
 
-    // Bulk apply specs: { ids, bulk_specs: { spec_template_id, specs, overrides: { [productId]: { field: value } } } }
+    // Bulk apply specs
     if (body.bulk_specs) {
-      const { spec_template_id, specs, overrides } = body.bulk_specs as {
-        spec_template_id: number
-        specs: Record<string, string>
-        overrides: Record<string, Record<string, string>>
+      const { spec_template_id, specs, overrides } = body.bulk_specs
+      if (!isPositiveInt(spec_template_id) || typeof specs !== 'object') {
+        return NextResponse.json({ error: 'Ongeldige bulk_specs' }, { status: 400 })
       }
       const stmt = db.prepare('UPDATE products SET spec_template_id = ?, specs = ? WHERE id = ?')
       const tx = db.transaction((ids: number[]) => {
         for (const id of ids) {
-          const productOverrides = overrides?.[String(id)] || {}
+          const productOverrides = (overrides && typeof overrides === 'object') ? (overrides[String(id)] || {}) : {}
           const mergedSpecs = { ...specs, ...productOverrides }
           stmt.run(spec_template_id, JSON.stringify(mergedSpecs), id)
         }
@@ -95,6 +98,9 @@ export async function PATCH(req: NextRequest) {
     }
 
     // Bulk assign supplier
+    if (!isInt(body.supplier_id)) {
+      return NextResponse.json({ error: 'supplier_id is verplicht' }, { status: 400 })
+    }
     const stmt = db.prepare('UPDATE products SET supplier_id = ? WHERE id = ?')
     const tx = db.transaction((ids: number[]) => {
       for (const id of ids) stmt.run(body.supplier_id, id)
@@ -103,8 +109,8 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ success: true, updated: body.ids.length })
   }
 
-  // Single product update: { id, supplier_id?, spec_template_id?, specs? }
-  if (!body.id) {
+  // Single product update
+  if (!isPositiveInt(body.id)) {
     return NextResponse.json({ error: 'Product id is verplicht' }, { status: 400 })
   }
 
@@ -114,7 +120,7 @@ export async function PATCH(req: NextRequest) {
 
     if (body.spec_template_id !== undefined) {
       updates.push('spec_template_id = ?')
-      params.push(body.spec_template_id)
+      params.push(isInt(body.spec_template_id) ? body.spec_template_id : null)
     }
     if (body.specs !== undefined) {
       updates.push('specs = ?')
@@ -122,7 +128,7 @@ export async function PATCH(req: NextRequest) {
     }
     if (body.supplier_id !== undefined) {
       updates.push('supplier_id = ?')
-      params.push(body.supplier_id)
+      params.push(isInt(body.supplier_id) ? body.supplier_id : null)
     }
 
     params.push(body.id)

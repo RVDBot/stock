@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-guard'
 import { getDb } from '@/lib/db'
+import { encryptValue, decryptValue, isEncryptionEnabled } from '@/lib/encrypt'
 
 const READ_SECRET_KEYS = ['auth_password_hash', 'auth_session_token', 'woo_consumer_secret', 'claude_api_key']
+const ENCRYPTED_KEYS = new Set(['woo_consumer_secret', 'claude_api_key'])
 
 const ALLOWED_WRITE_KEYS = new Set([
   'woo_url', 'woo_consumer_key', 'woo_consumer_secret',
@@ -11,6 +13,11 @@ const ALLOWED_WRITE_KEYS = new Set([
   'last_sync_at', 'last_sync_status',
   'ai_total_input_tokens', 'ai_total_output_tokens',
 ])
+
+function storeValue(key: string, value: string): string {
+  if (ENCRYPTED_KEYS.has(key) && value) return encryptValue(value)
+  return value
+}
 
 export async function GET(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
@@ -34,6 +41,7 @@ export async function GET(req: NextRequest) {
   }
   settings.has_woo_consumer_secret = hasWooConsumerSecret ? '1' : '0'
   settings.has_claude_api_key = hasClaudeApiKey ? '1' : '0'
+  settings.encryption_enabled = isEncryptionEnabled() ? '1' : '0'
   return NextResponse.json({ settings })
 }
 
@@ -49,7 +57,8 @@ export async function PUT(req: NextRequest) {
     const tx = db.transaction((entries: [string, string][]) => {
       for (const [key, value] of entries) {
         if (!ALLOWED_WRITE_KEYS.has(key)) continue
-        upsert.run(key, String(value), String(value))
+        const stored = storeValue(key, String(value))
+        upsert.run(key, stored, stored)
       }
     })
     tx(Object.entries(body.settings))
@@ -67,8 +76,9 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'Deze instelling kan niet via deze route worden aangepast' }, { status: 403 })
   }
 
+  const stored = storeValue(key, String(value))
   db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?')
-    .run(key, String(value), String(value))
+    .run(key, stored, stored)
 
   return NextResponse.json({ success: true })
 }

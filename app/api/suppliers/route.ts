@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-guard'
 import { getDb } from '@/lib/db'
+import { isPositiveInt, isNonEmptyString, isStringOrNull } from '@/lib/validate'
 
 export async function GET(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
@@ -24,24 +25,24 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const { name, lead_time_days, order_cycle_days, inspection, contact_name, contact_email, phone, preferred_contact, contact_info, notes } = body
 
-  if (!name || lead_time_days == null) {
-    return NextResponse.json({ error: 'name en lead_time_days zijn verplicht' }, { status: 400 })
+  if (!isNonEmptyString(name) || !isPositiveInt(lead_time_days)) {
+    return NextResponse.json({ error: 'name (string) en lead_time_days (positief geheel getal) zijn verplicht' }, { status: 400 })
   }
 
   const db = getDb()
   const result = db.prepare(
     'INSERT INTO suppliers (name, lead_time_days, order_cycle_days, inspection, contact_name, contact_email, phone, preferred_contact, contact_info, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(
-    name,
+    String(name).slice(0, 200),
     lead_time_days,
-    order_cycle_days ?? 30,
-    inspection || 'never',
-    contact_name || null,
-    contact_email || null,
-    phone || null,
-    preferred_contact || 'email',
-    contact_info || null,
-    notes || null,
+    isPositiveInt(order_cycle_days) ? order_cycle_days : 30,
+    ['never', 'always', 'random'].includes(inspection) ? inspection : 'never',
+    isStringOrNull(contact_name) ? (contact_name || null) : null,
+    isStringOrNull(contact_email) ? (contact_email || null) : null,
+    isStringOrNull(phone) ? (phone || null) : null,
+    ['email', 'whatsapp'].includes(preferred_contact) ? preferred_contact : 'email',
+    isStringOrNull(contact_info) ? (contact_info || null) : null,
+    isStringOrNull(notes) ? (notes || null) : null,
   )
 
   return NextResponse.json({ id: result.lastInsertRowid }, { status: 201 })
@@ -53,7 +54,7 @@ export async function PUT(req: NextRequest) {
   const body = await req.json()
   const { id, name, lead_time_days, order_cycle_days, inspection, contact_name, contact_email, phone, preferred_contact, contact_info, notes } = body
 
-  if (!id) {
+  if (!isPositiveInt(id)) {
     return NextResponse.json({ error: 'id is verplicht' }, { status: 400 })
   }
 
@@ -61,16 +62,16 @@ export async function PUT(req: NextRequest) {
   const result = db.prepare(
     'UPDATE suppliers SET name = ?, lead_time_days = ?, order_cycle_days = ?, inspection = ?, contact_name = ?, contact_email = ?, phone = ?, preferred_contact = ?, contact_info = ?, notes = ? WHERE id = ?'
   ).run(
-    name,
-    lead_time_days,
-    order_cycle_days ?? 30,
-    inspection || 'never',
-    contact_name || null,
-    contact_email || null,
-    phone || null,
-    preferred_contact || 'email',
-    contact_info || null,
-    notes || null,
+    String(name).slice(0, 200),
+    isPositiveInt(lead_time_days) ? lead_time_days : 1,
+    isPositiveInt(order_cycle_days) ? order_cycle_days : 30,
+    ['never', 'always', 'random'].includes(inspection) ? inspection : 'never',
+    isStringOrNull(contact_name) ? (contact_name || null) : null,
+    isStringOrNull(contact_email) ? (contact_email || null) : null,
+    isStringOrNull(phone) ? (phone || null) : null,
+    ['email', 'whatsapp'].includes(preferred_contact) ? preferred_contact : 'email',
+    isStringOrNull(contact_info) ? (contact_info || null) : null,
+    isStringOrNull(notes) ? (notes || null) : null,
     id,
   )
 
@@ -86,7 +87,7 @@ export async function DELETE(req: NextRequest) {
 
   const { id } = await req.json()
 
-  if (!id) {
+  if (!isPositiveInt(id)) {
     return NextResponse.json({ error: 'id is verplicht' }, { status: 400 })
   }
 

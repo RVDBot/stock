@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-guard'
 import { getDb } from '@/lib/db'
+import { isPositiveInt, isNonEmptyString, isDateStringOrNull, isStringOrNull, isIntOrNull, clampInt } from '@/lib/validate'
 
 export async function GET(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
@@ -13,16 +14,16 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
 
-  const { parent_id, name, expected_date, duration_days, impact_percentage, recurring, ai_lookup, ai_skip_months, notes } = await req.json()
+  const body = await req.json()
+  const { parent_id, name, expected_date, duration_days, impact_percentage, recurring, ai_lookup, ai_skip_months, notes } = body
 
-  if (!name) {
+  if (!isNonEmptyString(name)) {
     return NextResponse.json({ error: 'name is verplicht' }, { status: 400 })
   }
 
   const db = getDb()
 
-  // Verify parent exists if specified
-  if (parent_id) {
+  if (isPositiveInt(parent_id)) {
     const parent = db.prepare('SELECT id FROM events WHERE id = ? AND parent_id IS NULL').get(parent_id)
     if (!parent) {
       return NextResponse.json({ error: 'Hoofd-event niet gevonden' }, { status: 400 })
@@ -32,15 +33,15 @@ export async function POST(req: NextRequest) {
   const result = db.prepare(
     'INSERT INTO events (parent_id, name, expected_date, duration_days, impact_percentage, recurring, ai_lookup, ai_skip_months, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(
-    parent_id || null,
-    name,
-    expected_date || null,
-    duration_days ?? 7,
-    impact_percentage ?? 100,
-    recurring ?? 1,
-    ai_lookup ?? 1,
-    ai_skip_months ?? 6,
-    notes || null
+    isPositiveInt(parent_id) ? parent_id : null,
+    String(name).slice(0, 200),
+    isDateStringOrNull(expected_date) ? expected_date : null,
+    clampInt(duration_days, 1, 365, 7),
+    clampInt(impact_percentage, -100, 1000, 100),
+    recurring === 0 ? 0 : 1,
+    ai_lookup === 0 ? 0 : 1,
+    clampInt(ai_skip_months, 0, 24, 6),
+    isStringOrNull(notes) ? (notes || null) : null,
   )
 
   return NextResponse.json({ id: result.lastInsertRowid }, { status: 201 })
@@ -49,16 +50,28 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
 
-  const { id, parent_id, name, expected_date, duration_days, impact_percentage, recurring, ai_lookup, ai_skip_months, notes } = await req.json()
+  const body = await req.json()
+  const { id, parent_id, name, expected_date, duration_days, impact_percentage, recurring, ai_lookup, ai_skip_months, notes } = body
 
-  if (!id) {
+  if (!isPositiveInt(id)) {
     return NextResponse.json({ error: 'id is verplicht' }, { status: 400 })
   }
 
   const db = getDb()
   const result = db.prepare(
     'UPDATE events SET parent_id = ?, name = ?, expected_date = ?, duration_days = ?, impact_percentage = ?, recurring = ?, ai_lookup = ?, ai_skip_months = ?, notes = ? WHERE id = ?'
-  ).run(parent_id || null, name, expected_date || null, duration_days, impact_percentage, recurring, ai_lookup ?? 1, ai_skip_months ?? 6, notes || null, id)
+  ).run(
+    isPositiveInt(parent_id) ? parent_id : null,
+    isNonEmptyString(name) ? String(name).slice(0, 200) : '',
+    isDateStringOrNull(expected_date) ? expected_date : null,
+    clampInt(duration_days, 1, 365, 7),
+    clampInt(impact_percentage, -100, 1000, 100),
+    recurring === 0 ? 0 : 1,
+    ai_lookup === 0 ? 0 : 1,
+    clampInt(ai_skip_months, 0, 24, 6),
+    isStringOrNull(notes) ? (notes || null) : null,
+    id,
+  )
 
   if (result.changes === 0) {
     return NextResponse.json({ error: 'Event niet gevonden' }, { status: 404 })
@@ -72,7 +85,7 @@ export async function DELETE(req: NextRequest) {
 
   const { id } = await req.json()
 
-  if (!id) {
+  if (!isPositiveInt(id)) {
     return NextResponse.json({ error: 'id is verplicht' }, { status: 400 })
   }
 

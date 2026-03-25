@@ -1,5 +1,6 @@
 import { getDb } from '@/lib/db'
 import { log } from '@/lib/logger'
+import { decryptValue } from '@/lib/encrypt'
 
 interface WooProduct {
   id: number
@@ -38,7 +39,7 @@ export function getWooCredentials(): { url: string; key: string; secret: string 
     (db.prepare('SELECT value FROM settings WHERE key = ?').get(k) as { value: string } | undefined)?.value || ''
   const url = get('woo_url')
   const key = get('woo_consumer_key')
-  const secret = get('woo_consumer_secret')
+  const secret = decryptValue(get('woo_consumer_secret'))
   if (!url || !key || !secret) throw new Error('WooCommerce credentials niet geconfigureerd')
   return { url, key, secret }
 }

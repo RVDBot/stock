@@ -15,7 +15,11 @@ let _db: Database.Database | null = null
 
 export function getDb(): Database.Database {
   if (_db) return _db
+  const isNew = !fs.existsSync(DB_PATH)
   _db = new Database(DB_PATH)
+  if (isNew) {
+    try { fs.chmodSync(DB_PATH, 0o600) } catch {}
+  }
   _db.pragma('journal_mode = WAL')
   _db.pragma('foreign_keys = ON')
   initSchema(_db)
