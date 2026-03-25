@@ -176,6 +176,8 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
 
   const handleCellClick = useCallback((cellKey: string, e: React.MouseEvent) => {
     if (e.shiftKey && lastClickedCell) {
+      e.preventDefault()
+      window.getSelection()?.removeAllRanges()
       const [, ...startFieldParts] = lastClickedCell.split(':')
       const [, ...endFieldParts] = cellKey.split(':')
       const startField = startFieldParts.join(':')
