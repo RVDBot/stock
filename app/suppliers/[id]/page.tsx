@@ -368,6 +368,29 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
     setBulkEditing(true)
   }
 
+  async function startBulkEditDirect() {
+    if (selectedProducts.size === 0 || specTemplates.length === 0) return
+    // Use the first available template for this supplier
+    const template = specTemplates[0]
+    const fields = JSON.parse(template.fields) as TemplateField[]
+    // Load existing specs per product as overrides
+    const overrides: Record<string, Record<string, string>> = {}
+    const emptyBase: Record<string, string> = {}
+    fields.forEach(f => { if (f.type !== 'fixed') emptyBase[f.name] = '' })
+    await Promise.all([...selectedProducts].map(async pid => {
+      const res = await fetch(`/api/products?id=${pid}`)
+      const prod = await res.json()
+      if (prod.specs) {
+        const specs = typeof prod.specs === 'string' ? JSON.parse(prod.specs) : prod.specs
+        const nonEmpty = Object.fromEntries(Object.entries(specs).filter(([, v]) => v !== ''))
+        if (Object.keys(nonEmpty).length > 0) overrides[String(pid)] = nonEmpty as Record<string, string>
+      }
+    }))
+    setBulkTemplate({ templateId: template.id, fields, baseSpecs: emptyBase })
+    setBulkOverrides(overrides)
+    setBulkEditing(true)
+  }
+
   async function saveBulkSpecs() {
     if (!bulkTemplate) return
     setBulkSaving(true)
@@ -900,6 +923,13 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                           Deselecteren
                         </button>
                       </div>
+                      <button
+                        onClick={startBulkEditDirect}
+                        disabled={selectedProducts.size === 0 || specTemplates.length === 0}
+                        className="text-[12px] font-medium px-4 py-2 rounded-lg bg-surface-2 border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-surface-3 disabled:opacity-40 transition-all duration-150"
+                      >
+                        Bewerken ({selectedProducts.size})
+                      </button>
                       <button
                         onClick={startBulkEdit}
                         disabled={!sourceProductId || selectedProducts.size === 0}
