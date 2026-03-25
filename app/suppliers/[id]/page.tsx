@@ -256,6 +256,14 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [bulkEditing, bulkTemplate, selectedCells, allCellKeys, copiedValues, bulkOverrides])
 
+  // Warn before leaving page during bulk editing
+  useEffect(() => {
+    if (!bulkEditing) return
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault() }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [bulkEditing])
+
   function loadData() {
     setLoading(true)
     Promise.all([
