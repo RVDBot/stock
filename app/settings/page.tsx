@@ -39,6 +39,15 @@ export default function SettingsPage() {
   const [stockSaving, setStockSaving] = useState(false)
   const [stockMsg, setStockMsg] = useState('')
 
+  // Password
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [pwSaving, setPwSaving] = useState(false)
+  const [pwMsg, setPwMsg] = useState('')
+  const [pwError, setPwError] = useState('')
+  const [pwExpanded, setPwExpanded] = useState(false)
+
   // Sync
   const [historicalSyncing, setHistoricalSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
@@ -73,6 +82,39 @@ export default function SettingsPage() {
       loadData()
     } finally {
       setSyncing(false)
+    }
+  }
+
+  async function changePassword() {
+    setPwMsg('')
+    setPwError('')
+    if (!currentPassword || !newPassword) {
+      setPwError('Vul beide velden in')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setPwError('Nieuwe wachtwoorden komen niet overeen')
+      return
+    }
+    setPwSaving(true)
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'change-password', currentPassword, newPassword }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setPwError(data.error || 'Fout bij wijzigen')
+      } else {
+        setPwMsg('Wachtwoord gewijzigd')
+        setCurrentPassword('')
+        setNewPassword('')
+        setConfirmPassword('')
+        setPwExpanded(false)
+      }
+    } finally {
+      setPwSaving(false)
     }
   }
 
@@ -422,6 +464,58 @@ export default function SettingsPage() {
                 </button>
                 {stockMsg && <span className="text-success text-[12px]">{stockMsg}</span>}
               </div>
+            </div>
+
+            {/* Wachtwoord */}
+            <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5">
+              <div className="flex items-center justify-between">
+                <h2 className="text-[14px] font-semibold text-text-primary">Wachtwoord</h2>
+                <button
+                  onClick={() => { setPwExpanded(!pwExpanded); setPwMsg(''); setPwError('') }}
+                  className={secondaryBtn}
+                >
+                  {pwExpanded ? 'Sluiten' : 'Wijzigen'}
+                </button>
+              </div>
+              {pwExpanded && (
+                <div className="mt-4 space-y-3">
+                  <div>
+                    <label className={labelClass}>Huidig wachtwoord</label>
+                    <input
+                      type="password"
+                      className={`${inputClass} max-w-sm`}
+                      value={currentPassword}
+                      onChange={e => setCurrentPassword(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Nieuw wachtwoord</label>
+                    <input
+                      type="password"
+                      className={`${inputClass} max-w-sm`}
+                      value={newPassword}
+                      onChange={e => setNewPassword(e.target.value)}
+                    />
+                    <p className="text-text-tertiary text-[11px] mt-0.5">Min. 8 tekens, 1 hoofdletter, 1 kleine letter, 1 cijfer</p>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Bevestig nieuw wachtwoord</label>
+                    <input
+                      type="password"
+                      className={`${inputClass} max-w-sm`}
+                      value={confirmPassword}
+                      onChange={e => setConfirmPassword(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button className={primaryBtn} disabled={pwSaving} onClick={changePassword}>
+                      {pwSaving ? 'Wijzigen...' : 'Wachtwoord wijzigen'}
+                    </button>
+                    {pwMsg && <span className="text-success text-[12px]">{pwMsg}</span>}
+                    {pwError && <span className="text-danger text-[12px]">{pwError}</span>}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Data */}

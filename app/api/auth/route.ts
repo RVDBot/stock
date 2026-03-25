@@ -37,12 +37,42 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { action, password } = await req.json()
+  const body = await req.json()
+  const { action, password } = body
 
   if (action === 'logout') {
     clearSession()
     const res = NextResponse.json({ ok: true })
     res.cookies.set('session', '', { path: '/', maxAge: 0 })
+    return res
+  }
+
+  if (action === 'change-password') {
+    const sessionToken = req.cookies.get('session')?.value || ''
+    if (!validateSession(sessionToken)) {
+      return NextResponse.json({ error: 'Niet ingelogd' }, { status: 401 })
+    }
+    const { currentPassword, newPassword } = body
+    if (!currentPassword || !newPassword) {
+      return NextResponse.json({ error: 'Huidig en nieuw wachtwoord zijn verplicht' }, { status: 400 })
+    }
+    const db = getDb()
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('auth_password_hash') as { value: string } | undefined
+    if (!row || !verifyPassword(currentPassword, row.value)) {
+      return NextResponse.json({ error: 'Huidig wachtwoord is onjuist' }, { status: 401 })
+    }
+    if (newPassword.length < 8) {
+      return NextResponse.json({ error: 'Wachtwoord moet minimaal 8 tekens zijn' }, { status: 400 })
+    }
+    if (!/[a-z]/.test(newPassword) || !/[A-Z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+      return NextResponse.json({ error: 'Wachtwoord moet minimaal 1 kleine letter, 1 hoofdletter en 1 cijfer bevatten' }, { status: 400 })
+    }
+    const hash = hashPassword(newPassword)
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?')
+      .run('auth_password_hash', hash, hash)
+    const token = createSession()
+    const res = NextResponse.json({ ok: true })
+    res.cookies.set('session', token, getSessionCookieOptions(req))
     return res
   }
 
