@@ -15,11 +15,13 @@ RUN npm run build
 FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+RUN apk add --no-cache su-exec
 RUN addgroup --system app && adduser --system --ingroup app app
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=app:app /app/.next/standalone ./
 COPY --from=builder --chown=app:app /app/.next/static ./.next/static
-USER app
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 EXPOSE 3100
 ENV PORT=3100
-CMD ["node", "server.js"]
+CMD ["/entrypoint.sh"]
