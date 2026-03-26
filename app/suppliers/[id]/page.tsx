@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef, use } from 'react'
 import Nav from '@/components/Nav'
+import { apiFetch } from '@/lib/api'
 
 interface Supplier {
   id: number
@@ -269,12 +270,12 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   function loadData() {
     setLoading(true)
     Promise.all([
-      fetch(`/api/suppliers?id=${id}`).then(r => r.json()),
-      fetch(`/api/products?supplier_id=${id}`).then(r => r.json()),
-      fetch(`/api/purchase-orders?supplier_id=${id}`).then(r => r.json()),
-      fetch('/api/settings').then(r => r.json()),
-      fetch(`/api/spec-templates?supplier_id=${id}`).then(r => r.json()),
-      fetch(`/api/products?supplier_id=${id}&with_specs=1`).then(r => r.json()),
+      apiFetch(`/api/suppliers?id=${id}`).then(r => r.json()),
+      apiFetch(`/api/products?supplier_id=${id}`).then(r => r.json()),
+      apiFetch(`/api/purchase-orders?supplier_id=${id}`).then(r => r.json()),
+      apiFetch('/api/settings').then(r => r.json()),
+      apiFetch(`/api/spec-templates?supplier_id=${id}`).then(r => r.json()),
+      apiFetch(`/api/products?supplier_id=${id}&with_specs=1`).then(r => r.json()),
     ]).then(([supplierData, productsData, ordersData, settData, templatesData, specsData]) => {
       setSpecTemplates(Array.isArray(templatesData) ? templatesData : [])
       setProductsWithSpecs(Array.isArray(specsData) ? specsData : [])
@@ -305,7 +306,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   async function handleSync() {
     setSyncing(true)
     try {
-      await fetch('/api/sync', {
+      await apiFetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'daily' }),
@@ -319,7 +320,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   async function handleSave() {
     setSaving(true)
     try {
-      await fetch('/api/suppliers', {
+      await apiFetch('/api/suppliers', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: parseInt(id, 10), ...form }),
@@ -333,7 +334,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
 
   async function handleDelete() {
     if (!confirm('Weet je zeker dat je deze fabrikant wilt verwijderen? Producten worden losgekoppeld.')) return
-    await fetch('/api/suppliers', {
+    await apiFetch('/api/suppliers', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: parseInt(id, 10) }),
@@ -343,7 +344,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
 
   function loadOrderList() {
     setOrderListLoading(true)
-    fetch(`/api/order-list?supplier_id=${id}`)
+    apiFetch(`/api/order-list?supplier_id=${id}`)
       .then(r => r.json())
       .then(data => {
         setOrderList(data.products || [])
@@ -355,7 +356,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
 
   async function startBulkEdit() {
     if (!sourceProductId || selectedProducts.size === 0) return
-    const res = await fetch(`/api/products?id=${sourceProductId}`)
+    const res = await apiFetch(`/api/products?id=${sourceProductId}`)
     const product = await res.json()
     if (!product.spec_template_id || !product.template_fields) {
       alert('Bronproduct heeft geen template. Wijs eerst een template toe op de productpagina.')
@@ -378,7 +379,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
     const emptyBase: Record<string, string> = {}
     fields.forEach(f => { if (f.type !== 'fixed') emptyBase[f.name] = '' })
     await Promise.all([...selectedProducts].map(async pid => {
-      const res = await fetch(`/api/products?id=${pid}`)
+      const res = await apiFetch(`/api/products?id=${pid}`)
       const prod = await res.json()
       if (prod.specs) {
         const specs = typeof prod.specs === 'string' ? JSON.parse(prod.specs) : prod.specs
@@ -395,7 +396,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
     if (!bulkTemplate) return
     setBulkSaving(true)
     try {
-      await fetch('/api/products', {
+      await apiFetch('/api/products', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -438,7 +439,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
     if (!orderProductId || !orderQty) return
     setSubmitting(true)
     try {
-      await fetch('/api/purchase-orders', {
+      await apiFetch('/api/purchase-orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -533,13 +534,13 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
     setTemplateSaving(true)
     try {
       if (editingTemplate) {
-        await fetch('/api/spec-templates', {
+        await apiFetch('/api/spec-templates', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id: editingTemplate.id, name: templateName.trim(), fields: cleanFields }),
         })
       } else {
-        await fetch('/api/spec-templates', {
+        await apiFetch('/api/spec-templates', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ supplier_id: parseInt(id, 10), name: templateName.trim(), fields: cleanFields }),
@@ -554,7 +555,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
 
   async function handleDeleteTemplate(templateId: number) {
     if (!confirm('Template verwijderen? Producten worden losgekoppeld van dit template.')) return
-    await fetch('/api/spec-templates', {
+    await apiFetch('/api/spec-templates', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: templateId }),

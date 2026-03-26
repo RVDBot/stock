@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useRef } from 'react'
 import Nav from '@/components/Nav'
+import { apiFetch } from '@/lib/api'
 
 interface Product {
   productId: number
@@ -58,10 +59,10 @@ export default function ProductsPage() {
   function loadData() {
     setLoading(true)
     Promise.all([
-      fetch('/api/products').then(r => r.json()),
-      fetch('/api/products?inactive=1').then(r => r.json()),
-      fetch('/api/suppliers').then(r => r.json()),
-      fetch('/api/settings').then(r => r.json()),
+      apiFetch('/api/products').then(r => r.json()),
+      apiFetch('/api/products?inactive=1').then(r => r.json()),
+      apiFetch('/api/suppliers').then(r => r.json()),
+      apiFetch('/api/settings').then(r => r.json()),
     ]).then(([prodData, ignoredData, suppData, settData]) => {
       setProducts(Array.isArray(prodData) ? prodData : [])
       setIgnoredProducts(Array.isArray(ignoredData) ? ignoredData : [])
@@ -75,7 +76,7 @@ export default function ProductsPage() {
   async function handleSync() {
     setSyncing(true)
     try {
-      await fetch('/api/sync', {
+      await apiFetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'daily' }),
@@ -157,7 +158,7 @@ export default function ProductsPage() {
     if (selectedProducts.size === 0 || !bulkSupplierId) return
     setBulkAssigning(true)
     try {
-      await fetch('/api/products', {
+      await apiFetch('/api/products', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: Array.from(selectedProducts), supplier_id: parseInt(bulkSupplierId) }),
@@ -175,7 +176,7 @@ export default function ProductsPage() {
     if (selectedProducts.size === 0) return
     setBulkAssigning(true)
     try {
-      await fetch('/api/products', {
+      await apiFetch('/api/products', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: Array.from(selectedProducts), active: 0 }),
@@ -189,7 +190,7 @@ export default function ProductsPage() {
   }
 
   async function restoreProducts(ids: number[]) {
-    await fetch('/api/products', {
+    await apiFetch('/api/products', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids, active: 1 }),

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Nav from '@/components/Nav'
+import { apiFetch } from '@/lib/api'
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
@@ -54,7 +55,7 @@ export default function SettingsPage() {
 
   function loadData() {
     setLoading(true)
-    fetch('/api/settings').then(r => r.json()).then(settData => {
+    apiFetch('/api/settings').then(r => r.json()).then(settData => {
       const settings = settData.settings || {}
       setLastSyncAt(settings.last_sync_at || '')
       setLastSyncStatus(settings.last_sync_status || '')
@@ -74,7 +75,7 @@ export default function SettingsPage() {
   async function handleSync() {
     setSyncing(true)
     try {
-      await fetch('/api/sync', {
+      await apiFetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'daily' }),
@@ -98,7 +99,7 @@ export default function SettingsPage() {
     }
     setPwSaving(true)
     try {
-      const res = await fetch('/api/auth', {
+      const res = await apiFetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'change-password', currentPassword, newPassword }),
@@ -124,13 +125,13 @@ export default function SettingsPage() {
     setWooSaving(true)
     setWooMsg('')
     try {
-      await fetch('/api/settings', {
+      await apiFetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ settings: { woo_url: wooUrl, woo_consumer_key: wooConsumerKey } }),
       })
       if (wooConsumerSecret) {
-        await fetch('/api/settings', {
+        await apiFetch('/api/settings', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ key: 'woo_consumer_secret', value: wooConsumerSecret }),
@@ -150,7 +151,7 @@ export default function SettingsPage() {
     setClaudeMsg('')
     try {
       if (claudeApiKey) {
-        await fetch('/api/settings', {
+        await apiFetch('/api/settings', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ key: 'claude_api_key', value: claudeApiKey }),
@@ -169,7 +170,7 @@ export default function SettingsPage() {
     setStockSaving(true)
     setStockMsg('')
     try {
-      await fetch('/api/settings', {
+      await apiFetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ settings: { warehouse_inbound_days: warehouseInboundDays, safety_margin_days: safetyMarginDays } }),
@@ -185,7 +186,7 @@ export default function SettingsPage() {
     setEventSaving(true)
     setEventMsg('')
     try {
-      await fetch('/api/settings', {
+      await apiFetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ settings: { ai_max_tokens_per_lookup: aiMaxTokens } }),
@@ -202,7 +203,7 @@ export default function SettingsPage() {
     setSyncing(true)
     setSyncMsg('')
     try {
-      const res = await fetch('/api/sync', {
+      const res = await apiFetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'daily' }),
@@ -226,7 +227,7 @@ export default function SettingsPage() {
     setHistoricalSyncing(true)
     setSyncMsg('')
     try {
-      const res = await fetch('/api/sync', {
+      const res = await apiFetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'historical' }),

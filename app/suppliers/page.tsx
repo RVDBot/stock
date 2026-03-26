@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Nav from '@/components/Nav'
+import { apiFetch } from '@/lib/api'
 
 interface Supplier {
   id: number
@@ -36,8 +37,8 @@ export default function SuppliersPage() {
   function loadData() {
     setLoading(true)
     Promise.all([
-      fetch('/api/suppliers').then(r => r.json()),
-      fetch('/api/settings').then(r => r.json()),
+      apiFetch('/api/suppliers').then(r => r.json()),
+      apiFetch('/api/settings').then(r => r.json()),
     ]).then(async ([suppliersData, settData]) => {
       const settings = settData.settings || {}
       setLastSyncAt(settings.last_sync_at || '')
@@ -47,7 +48,7 @@ export default function SuppliersPage() {
 
       const withCounts: SupplierWithCounts[] = await Promise.all(
         supplierList.map(async (s) => {
-          const products: ProductStatus[] = await fetch(`/api/products?supplier_id=${s.id}`).then(r => r.json())
+          const products: ProductStatus[] = await apiFetch(`/api/products?supplier_id=${s.id}`).then(r => r.json())
           const arr = Array.isArray(products) ? products : []
           return {
             ...s,
@@ -71,7 +72,7 @@ export default function SuppliersPage() {
   async function handleSync() {
     setSyncing(true)
     try {
-      await fetch('/api/sync', {
+      await apiFetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'daily' }),
@@ -86,7 +87,7 @@ export default function SuppliersPage() {
     if (!newName || !newLeadTime) return
     setSaving(true)
     try {
-      await fetch('/api/suppliers', {
+      await apiFetch('/api/suppliers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newName, lead_time_days: parseInt(newLeadTime) }),

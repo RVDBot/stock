@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useRef } from 'react'
 import Nav from '@/components/Nav'
+import { apiFetch } from '@/lib/api'
 
 interface ProductStatus {
   productId: number
@@ -47,9 +48,9 @@ export default function AlertsPage() {
   function loadData() {
     setLoading(true)
     Promise.all([
-      fetch('/api/products').then(r => r.json()),
-      fetch('/api/products?inactive=1').then(r => r.json()),
-      fetch('/api/settings').then(r => r.json()),
+      apiFetch('/api/products').then(r => r.json()),
+      apiFetch('/api/products?inactive=1').then(r => r.json()),
+      apiFetch('/api/settings').then(r => r.json()),
     ]).then(([prodData, inactiveData, settData]) => {
       setProducts(Array.isArray(prodData) ? prodData : prodData.products || [])
       setIgnoredProducts(Array.isArray(inactiveData) ? inactiveData : [])
@@ -63,7 +64,7 @@ export default function AlertsPage() {
   async function handleSync() {
     setSyncing(true)
     try {
-      await fetch('/api/sync', {
+      await apiFetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'daily' }),
@@ -75,7 +76,7 @@ export default function AlertsPage() {
   }
 
   async function ignoreProduct(productId: number) {
-    await fetch('/api/products', {
+    await apiFetch('/api/products', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: [productId], active: 0 }),
@@ -302,7 +303,7 @@ export default function AlertsPage() {
                   </div>
                   <button
                     onClick={async () => {
-                      await fetch('/api/products', {
+                      await apiFetch('/api/products', {
                         method: 'PATCH',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ ids: [p.productId], active: 1 }),

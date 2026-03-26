@@ -2,6 +2,7 @@
 
 import { useEffect, useState, use } from 'react'
 import Nav from '@/components/Nav'
+import { apiFetch } from '@/lib/api'
 
 interface TemplateField {
   name: string
@@ -56,8 +57,8 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   function loadData() {
     setLoading(true)
     Promise.all([
-      fetch(`/api/products?id=${id}`).then(r => r.json()),
-      fetch('/api/settings').then(r => r.json()),
+      apiFetch(`/api/products?id=${id}`).then(r => r.json()),
+      apiFetch('/api/settings').then(r => r.json()),
     ]).then(([productData, settData]) => {
       if (productData.error) {
         setProduct(null)
@@ -72,7 +73,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
         }
         // Load templates for this supplier
         if (p.supplier_id) {
-          fetch(`/api/spec-templates?supplier_id=${p.supplier_id}`).then(r => r.json()).then(t => {
+          apiFetch(`/api/spec-templates?supplier_id=${p.supplier_id}`).then(r => r.json()).then(t => {
             setTemplates(Array.isArray(t) ? t : [])
           })
         }
@@ -86,7 +87,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   async function handleSync() {
     setSyncing(true)
     try {
-      await fetch('/api/sync', {
+      await apiFetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'daily' }),
@@ -124,7 +125,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   async function handleSave() {
     setSaving(true)
     try {
-      await fetch('/api/products', {
+      await apiFetch('/api/products', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

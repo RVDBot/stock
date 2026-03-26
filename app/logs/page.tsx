@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Nav from '@/components/Nav'
+import { apiFetch } from '@/lib/api'
 
 interface LogEntry {
   id: number
@@ -31,8 +32,8 @@ export default function LogsPage() {
     const params = new URLSearchParams({ limit: '200' })
     if (filter) params.set('level', filter)
     Promise.all([
-      fetch(`/api/logs?${params}`).then(r => r.json()),
-      fetch('/api/settings').then(r => r.json()),
+      apiFetch(`/api/logs?${params}`).then(r => r.json()),
+      apiFetch('/api/settings').then(r => r.json()),
     ]).then(([logsData, settData]) => {
       setLogs(Array.isArray(logsData) ? logsData : [])
       const settings = settData.settings || {}
@@ -44,7 +45,7 @@ export default function LogsPage() {
   async function handleSync() {
     setSyncing(true)
     try {
-      await fetch('/api/sync', {
+      await apiFetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'daily' }),
@@ -57,7 +58,7 @@ export default function LogsPage() {
 
   async function clearLogs() {
     if (!confirm('Alle logs wissen?')) return
-    await fetch('/api/logs', { method: 'DELETE' })
+    await apiFetch('/api/logs', { method: 'DELETE' })
     loadData()
   }
 

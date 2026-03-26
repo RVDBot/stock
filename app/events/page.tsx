@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useRef } from 'react'
 import Nav from '@/components/Nav'
+import { apiFetch } from '@/lib/api'
 
 interface Event {
   id: number
@@ -118,8 +119,8 @@ export default function EventsPage() {
   function loadData() {
     setLoading(true)
     Promise.all([
-      fetch('/api/events').then(r => r.json()),
-      fetch('/api/settings').then(r => r.json()),
+      apiFetch('/api/events').then(r => r.json()),
+      apiFetch('/api/settings').then(r => r.json()),
     ]).then(([eventsData, settData]) => {
       setEvents(Array.isArray(eventsData) ? eventsData : [])
       const settings = settData.settings || {}
@@ -131,7 +132,7 @@ export default function EventsPage() {
   async function handleSync() {
     setSyncing(true)
     try {
-      await fetch('/api/sync', {
+      await apiFetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'daily' }),
@@ -146,7 +147,7 @@ export default function EventsPage() {
 
   function loadPeaks() {
     setPeaksLoading(true)
-    fetch('/api/peaks').then(r => r.json()).then(data => {
+    apiFetch('/api/peaks').then(r => r.json()).then(data => {
       setPeaks(data.peaks || {})
     }).finally(() => setPeaksLoading(false))
   }
@@ -284,7 +285,7 @@ export default function EventsPage() {
     }
 
     try {
-      const res = await fetch('/api/events', {
+      const res = await apiFetch('/api/events', {
         method: editingId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -297,7 +298,7 @@ export default function EventsPage() {
         // Delete existing subs and recreate
         const existingSubs = subEventsMap.get(editingId) || []
         for (const sub of existingSubs) {
-          await fetch('/api/events', {
+          await apiFetch('/api/events', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id: sub.id }),
@@ -308,7 +309,7 @@ export default function EventsPage() {
       // Create new subs
       for (const sub of newSubs) {
         if (!sub.name.trim()) continue
-        await fetch('/api/events', {
+        await apiFetch('/api/events', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -337,7 +338,7 @@ export default function EventsPage() {
   async function handleDelete(id: number) {
     setDeleting(id)
     try {
-      await fetch('/api/events', {
+      await apiFetch('/api/events', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id }),
@@ -355,7 +356,7 @@ export default function EventsPage() {
   async function handleAiLookup(eventId: number) {
     setLookingUp(eventId)
     try {
-      const res = await fetch('/api/events/lookup', {
+      const res = await apiFetch('/api/events/lookup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: eventId }),
