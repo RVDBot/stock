@@ -29,8 +29,26 @@ function formatNumber(n: number): string {
 
 const STATUS_STYLES = {
   order_now: { bg: 'bg-danger/10', text: 'text-danger', border: 'border-danger/20', label: 'Bestel nu' },
+  ordered: { bg: 'bg-accent/10', text: 'text-accent', border: 'border-accent/20', label: 'Besteld' },
   soon: { bg: 'bg-warning/10', text: 'text-warning', border: 'border-warning/20', label: 'Binnenkort' },
   on_track: { bg: 'bg-success/10', text: 'text-success', border: 'border-success/20', label: 'Op schema' },
+}
+
+function getDisplayStatus(p: ProductStatus): keyof typeof STATUS_STYLES {
+  if (p.status === 'order_now' && p.pendingOrderQty > 0) return 'ordered'
+  return p.status
+}
+
+function getDisplayLabel(p: ProductStatus): string {
+  if (p.status === 'order_now' && p.pendingOrderQty > 0) {
+    if (p.pendingOrderArrival) {
+      const days = Math.ceil((new Date(p.pendingOrderArrival).getTime() - Date.now()) / 86400000)
+      if (days <= 0) return 'Verwacht vandaag'
+      return `Verwacht in ${days}d`
+    }
+    return 'Besteld'
+  }
+  return STATUS_STYLES[p.status].label
 }
 
 export default function AlertsPage() {
@@ -123,7 +141,8 @@ export default function AlertsPage() {
   }, [ignoredProducts, search])
 
   const summary = useMemo(() => ({
-    orderNow: products.filter(p => p.status === 'order_now').length,
+    orderNow: products.filter(p => p.status === 'order_now' && p.pendingOrderQty === 0).length,
+    ordered: products.filter(p => p.status === 'order_now' && p.pendingOrderQty > 0).length,
     soon: products.filter(p => p.status === 'soon').length,
     total: products.length,
   }), [products])
@@ -142,6 +161,10 @@ export default function AlertsPage() {
             <div>
               <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-0.5">Bestel nu</p>
               <p className="text-[22px] font-bold text-danger tracking-tight leading-none tabular-nums">{summary.orderNow}</p>
+            </div>
+            <div>
+              <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-0.5">Besteld</p>
+              <p className="text-[22px] font-bold text-accent tracking-tight leading-none tabular-nums">{summary.ordered}</p>
             </div>
             <div>
               <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-0.5">Binnenkort</p>
@@ -191,7 +214,8 @@ export default function AlertsPage() {
         ) : (
           <div className="space-y-2">
             {alerts.map((p, i) => {
-              const style = STATUS_STYLES[p.status]
+              const displayStatus = getDisplayStatus(p)
+              const style = STATUS_STYLES[displayStatus]
               return (
                 <div
                   key={p.productId}
@@ -202,7 +226,7 @@ export default function AlertsPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-lg border ${style.bg} ${style.text} ${style.border}`}>
-                          {style.label}
+                          {getDisplayLabel(p)}
                         </span>
                         <span className="text-text-primary text-[14px] font-semibold">{p.name}</span>
                       </div>
@@ -220,8 +244,8 @@ export default function AlertsPage() {
                         )}
                       </div>
                       {p.pendingOrderQty > 0 && (
-                        <p className="text-[11px] text-success mt-1 ml-8">
-                          {formatNumber(p.pendingOrderQty)} besteld
+                        <p className="text-[11px] text-accent mt-1 ml-8">
+                          {formatNumber(p.pendingOrderQty)} stuks besteld
                           {p.pendingOrderArrival && `, verwacht ${new Date(p.pendingOrderArrival).toLocaleDateString('nl-NL')}`}
                         </p>
                       )}
