@@ -29,6 +29,7 @@ export default function SettingsPage() {
 
   // Event settings
   const [aiMaxTokens, setAiMaxTokens] = useState('100')
+  const [aiTokenCap, setAiTokenCap] = useState('0')
   const [eventSaving, setEventSaving] = useState(false)
   const [eventMsg, setEventMsg] = useState('')
   const [totalInputTokens, setTotalInputTokens] = useState(0)
@@ -65,6 +66,7 @@ export default function SettingsPage() {
       setHasWooSecret(settings.has_woo_consumer_secret === '1')
       setHasClaudeKey(settings.has_claude_api_key === '1')
       setAiMaxTokens(settings.ai_max_tokens_per_lookup || '100')
+      setAiTokenCap(settings.ai_token_cap || '0')
       setTotalInputTokens(parseInt(settings.ai_total_input_tokens || '0', 10))
       setTotalOutputTokens(parseInt(settings.ai_total_output_tokens || '0', 10))
       setWarehouseInboundDays(settings.warehouse_inbound_days || '14')
@@ -189,7 +191,7 @@ export default function SettingsPage() {
       await apiFetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ settings: { ai_max_tokens_per_lookup: aiMaxTokens } }),
+        body: JSON.stringify({ settings: { ai_max_tokens_per_lookup: aiMaxTokens, ai_token_cap: aiTokenCap } }),
       })
       setEventMsg('Opgeslagen')
       setTimeout(() => setEventMsg(''), 3000)
@@ -414,19 +416,39 @@ export default function SettingsPage() {
             {/* Evenement instellingen */}
             <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5">
               <h2 className="text-[14px] font-semibold text-text-primary mb-3">Evenement instellingen</h2>
-              <div className="mb-3">
-                <label className={labelClass}>Max tokens per AI lookup</label>
-                <input
-                  type="number"
-                  className={`${inputClass} max-w-xs`}
-                  value={aiMaxTokens}
-                  onChange={e => setAiMaxTokens(e.target.value)}
-                  min="10"
-                  max="4096"
-                />
-                <p className="text-text-tertiary text-[12px] mt-1">
-                  Maximum aantal output tokens dat Claude mag gebruiken per datum opzoeking. Standaard: 100.
-                </p>
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className={labelClass}>Max tokens per AI lookup</label>
+                  <input
+                    type="number"
+                    className={inputClass}
+                    value={aiMaxTokens}
+                    onChange={e => setAiMaxTokens(e.target.value)}
+                    min="10"
+                    max="4096"
+                  />
+                  <p className="text-text-tertiary text-[12px] mt-1">
+                    Max output tokens per opzoeking. Standaard: 100.
+                  </p>
+                </div>
+                <div>
+                  <label className={labelClass}>Token limiet (totaal)</label>
+                  <input
+                    type="number"
+                    className={inputClass}
+                    value={aiTokenCap}
+                    onChange={e => setAiTokenCap(e.target.value)}
+                    min="0"
+                  />
+                  <p className="text-text-tertiary text-[12px] mt-1">
+                    Maximaal totaal token gebruik. 0 = geen limiet.
+                  </p>
+                  {parseInt(aiTokenCap) > 0 && (
+                    <p className={`text-[12px] mt-1 ${(totalInputTokens + totalOutputTokens) >= parseInt(aiTokenCap) ? 'text-danger font-medium' : 'text-text-secondary'}`}>
+                      Gebruikt: {(totalInputTokens + totalOutputTokens).toLocaleString('nl-NL')} / {parseInt(aiTokenCap).toLocaleString('nl-NL')}
+                    </p>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <button className={primaryBtn} disabled={eventSaving} onClick={saveEventSettings}>

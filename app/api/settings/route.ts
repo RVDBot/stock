@@ -8,7 +8,7 @@ const ENCRYPTED_KEYS = new Set(['woo_consumer_secret', 'claude_api_key'])
 
 const ALLOWED_WRITE_KEYS = new Set([
   'woo_url', 'woo_consumer_key', 'woo_consumer_secret',
-  'claude_api_key', 'ai_max_tokens_per_lookup',
+  'claude_api_key', 'ai_max_tokens_per_lookup', 'ai_token_cap',
   'warehouse_inbound_days', 'safety_margin_days',
   'last_sync_at', 'last_sync_status',
   'ai_total_input_tokens', 'ai_total_output_tokens',

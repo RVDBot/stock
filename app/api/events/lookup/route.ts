@@ -58,6 +58,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Claude API key niet geconfigureerd. Ga naar Instellingen.' }, { status: 400 })
   }
 
+  // Token cap check
+  const tokenCap = getSettingInt(db, 'ai_token_cap', 0)
+  if (tokenCap > 0) {
+    const totalUsed = getSettingInt(db, 'ai_total_input_tokens', 0) + getSettingInt(db, 'ai_total_output_tokens', 0)
+    if (totalUsed >= tokenCap) {
+      return NextResponse.json({ error: `Token limiet bereikt (${totalUsed.toLocaleString('nl-NL')} / ${tokenCap.toLocaleString('nl-NL')}). Verhoog het limiet in Instellingen.` }, { status: 429 })
+    }
+  }
+
   // Build context: if sub-event, include parent name
   let eventLabel = event.name
   if (event.parent_id) {
