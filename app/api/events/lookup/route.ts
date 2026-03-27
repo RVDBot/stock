@@ -58,8 +58,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Claude API key niet geconfigureerd. Ga naar Instellingen.' }, { status: 400 })
   }
 
-  const maxTokens = getSettingInt(db, 'ai_max_tokens_per_lookup', 100)
-
   // Build context: if sub-event, include parent name
   let eventLabel = event.name
   if (event.parent_id) {
@@ -77,18 +75,21 @@ export async function POST(req: NextRequest) {
     const client = new Anthropic({ apiKey })
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: maxTokens,
+      max_tokens: 1024,
+      tools: [{ type: 'web_search_20250305' as const, name: 'web_search', max_uses: 3 }],
       messages: [{
         role: 'user',
-        content: `What is the next upcoming date for "${eventLabel}"? Today is ${now.toISOString().slice(0, 10)}. If it's an annual event, give the ${currentYear} date if it hasn't passed yet, otherwise the ${nextYear} date. Respond with ONLY the date in YYYY-MM-DD format, nothing else. If you don't know, respond with UNKNOWN.`,
+        content: `Find the exact date(s) for "${eventLabel}" in ${currentYear} or ${nextYear}. Today is ${now.toISOString().slice(0, 10)}. Search the web for the most up-to-date information. If it's an annual event, give the ${currentYear} date if it hasn't passed yet, otherwise the ${nextYear} date. For multi-day events, give the START date. Respond with ONLY the date in YYYY-MM-DD format as your final answer, nothing else. If you truly cannot find it, respond with UNKNOWN.`,
       }],
     })
 
     // Track token usage
     addTokenUsage(db, message.usage.input_tokens, message.usage.output_tokens)
 
-    const text = message.content[0].type === 'text' ? message.content[0].text.trim() : ''
-    const dateMatch = text.match(/^\d{4}-\d{2}-\d{2}$/)
+    // Extract text from response (may include tool use blocks for web search)
+    const textBlocks = message.content.filter(b => b.type === 'text')
+    const text = textBlocks.map(b => b.type === 'text' ? b.text : '').join('').trim()
+    const dateMatch = text.match(/\d{4}-\d{2}-\d{2}/)
 
     db.prepare('UPDATE events SET last_checked_at = CURRENT_TIMESTAMP WHERE id = ?').run(id)
 
@@ -96,7 +97,7 @@ export async function POST(req: NextRequest) {
 
     if (dateMatch) {
       db.prepare('UPDATE events SET expected_date = ? WHERE id = ?').run(dateMatch[0], id)
-      log('info', `AI datum gevonden voor "${eventLabel}": ${dateMatch[0]} (tokens: ${tokensUsed})`)
+      log('info', `AI datum gevonden voor "${eventLabel}": ${dateMatch[0]} (tokens: ${tokensUsed}, web search)`)
       return NextResponse.json({ success: true, date: dateMatch[0] })
     } else {
       log('warn', `AI kon datum niet vinden voor "${eventLabel}": ${text} (tokens: ${tokensUsed})`)
