@@ -12,6 +12,7 @@ interface ProductForOrder {
   sku: string
   name: string
   currentStock: number
+  pendingQty: number
   dailySales: number
   requiredStock: number
   toOrder: number
@@ -20,8 +21,18 @@ interface ProductForOrder {
   totalCost: number | null
 }
 
-export function calculateOrderList(supplierId: number): {
+export interface CoverageBreakdown {
+  leadTimeDays: number
+  warehouseInboundDays: number
+  safetyMarginDays: number
+  cycleDays: number
+  defaultCycleDays: number
+}
+
+// cycleDaysOverride: what-if for how long the order should last after arrival (defaults to the supplier's cycle)
+export function calculateOrderList(supplierId: number, cycleDaysOverride?: number): {
   coverageDays: number
+  breakdown: CoverageBreakdown | null
   products: ProductForOrder[]
 } {
   const db = getDb()
@@ -33,7 +44,7 @@ export function calculateOrderList(supplierId: number): {
 
   if (!supplier) {
     log('warn', `Bestellijst: fabrikant ${supplierId} niet gevonden`)
-    return { coverageDays: 0, products: [] }
+    return { coverageDays: 0, breakdown: null, products: [] }
   }
 
   const settings = db.prepare("SELECT key, value FROM settings WHERE key IN ('warehouse_inbound_days', 'safety_margin_days')").all() as { key: string; value: string }[]
@@ -41,7 +52,15 @@ export function calculateOrderList(supplierId: number): {
   const warehouseInbound = parseInt(settingsMap.warehouse_inbound_days || '14', 10)
   const safetyMargin = parseInt(settingsMap.safety_margin_days || '7', 10)
 
-  const coverageDays = supplier.lead_time_days + warehouseInbound + safetyMargin + supplier.order_cycle_days
+  const cycleDays = cycleDaysOverride ?? supplier.order_cycle_days
+  const coverageDays = supplier.lead_time_days + warehouseInbound + safetyMargin + cycleDays
+  const breakdown: CoverageBreakdown = {
+    leadTimeDays: supplier.lead_time_days,
+    warehouseInboundDays: warehouseInbound,
+    safetyMarginDays: safetyMargin,
+    cycleDays,
+    defaultCycleDays: supplier.order_cycle_days,
+  }
 
   // Get all active events with sub-event impact
   const events = db.prepare(`
@@ -59,7 +78,7 @@ export function calculateOrderList(supplierId: number): {
     WHERE p.supplier_id = ? AND p.active = 1 AND p.archived = 0
   `).all(supplierId) as { id: number; sku: string; name: string; current_stock: number; manual_daily_sales: number | null; specs: string | null; template_fields: string | null }[]
 
-  log('info', `Bestellijst fabrikant ${supplierId}: ${products.length} producten, coverageDays=${coverageDays} (lead=${supplier.lead_time_days} + inbound=${warehouseInbound} + marge=${safetyMargin} + cyclus=${supplier.order_cycle_days})`)
+  log('info', `Bestellijst fabrikant ${supplierId}: ${products.length} producten, coverageDays=${coverageDays} (lead=${supplier.lead_time_days} + inbound=${warehouseInbound} + marge=${safetyMargin} + cyclus=${cycleDays}${cycleDaysOverride !== undefined ? ' (wat-als)' : ''})`)
 
   // Helper: extract first price field from template specs
   function getUnitPrice(specs: string | null, templateFields: string | null): { price: number | null; currency: string | null } {
@@ -80,6 +99,12 @@ export function calculateOrderList(supplierId: number): {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
+  // Stock already on its way counts towards what we need (same statuses as stock-status.ts)
+  const pendingStmt = db.prepare(`
+    SELECT COALESCE(SUM(quantity), 0) as qty FROM purchase_orders
+    WHERE product_id = ? AND status IN ('ordered', 'shipped')
+  `)
+
   const result: ProductForOrder[] = []
 
   for (const product of products) {
@@ -94,6 +119,7 @@ export function calculateOrderList(supplierId: number): {
       ?? (salesData.days > 0 ? (salesData.total || 0) / 90 : 0)
 
     const { price: unitPrice, currency } = getUnitPrice(product.specs, product.template_fields)
+    const pendingQty = (pendingStmt.get(product.id) as { qty: number }).qty
 
     if (dailySales <= 0) {
       result.push({
@@ -101,6 +127,7 @@ export function calculateOrderList(supplierId: number): {
         sku: product.sku,
         name: product.name,
         currentStock: product.current_stock,
+        pendingQty,
         dailySales: 0,
         requiredStock: 0,
         toOrder: 0,
@@ -134,13 +161,14 @@ export function calculateOrderList(supplierId: number): {
     }
 
     requiredStock = Math.ceil(requiredStock)
-    const toOrder = Math.max(0, requiredStock - product.current_stock)
+    const toOrder = Math.max(0, requiredStock - product.current_stock - pendingQty)
 
     result.push({
       productId: product.id,
       sku: product.sku,
       name: product.name,
       currentStock: product.current_stock,
+      pendingQty,
       dailySales: Math.round(dailySales * 10) / 10,
       requiredStock,
       toOrder,
@@ -153,5 +181,5 @@ export function calculateOrderList(supplierId: number): {
   // Sort: highest toOrder first
   result.sort((a, b) => b.toOrder - a.toOrder)
 
-  return { coverageDays, products: result }
+  return { coverageDays, breakdown, products: result }
 }

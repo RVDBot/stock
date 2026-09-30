@@ -24,6 +24,7 @@ interface OrderListProduct {
   sku: string
   name: string
   currentStock: number
+  pendingQty: number
   dailySales: number
   requiredStock: number
   toOrder: number
@@ -31,6 +32,16 @@ interface OrderListProduct {
   currency: string | null
   totalCost: number | null
 }
+
+interface CoverageBreakdown {
+  leadTimeDays: number
+  warehouseInboundDays: number
+  safetyMarginDays: number
+  cycleDays: number
+  defaultCycleDays: number
+}
+
+const MAX_CYCLE_DAYS = 365
 
 interface ProductStatus {
   productId: number
@@ -157,6 +168,13 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   const [orderList, setOrderList] = useState<OrderListProduct[]>([])
   const [orderListCoverageDays, setOrderListCoverageDays] = useState(0)
   const [orderListLoading, setOrderListLoading] = useState(false)
+  const [orderListBreakdown, setOrderListBreakdown] = useState<CoverageBreakdown | null>(null)
+  // What-if cycle (days the order should last after arrival); null = supplier default
+  const [whatIfCycle, setWhatIfCycle] = useState<number | null>(null)
+  const [whatIfInput, setWhatIfInput] = useState('')
+  const [orderListRecalculating, setOrderListRecalculating] = useState(false)
+  const whatIfTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const orderListRequest = useRef(0)
 
   // Bulk specs
   const [bulkMode, setBulkMode] = useState(false)
@@ -360,16 +378,34 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
     window.location.href = '/suppliers'
   }
 
-  function loadOrderList() {
-    setOrderListLoading(true)
-    apiFetch(`/api/order-list?supplier_id=${id}`)
+  function loadOrderList(cycleDays: number | null = whatIfCycle, recalculate = false) {
+    if (recalculate) setOrderListRecalculating(true)
+    else setOrderListLoading(true)
+    const cycleParam = cycleDays !== null ? `&cycle_days=${cycleDays}` : ''
+    const request = ++orderListRequest.current
+    apiFetch(`/api/order-list?supplier_id=${id}${cycleParam}`)
       .then(r => r.json())
       .then(data => {
+        if (request !== orderListRequest.current) return // a newer what-if request superseded this one
         setOrderList(data.products || [])
         setOrderListCoverageDays(data.coverageDays || 0)
+        setOrderListBreakdown(data.breakdown || null)
+        if (data.breakdown) setWhatIfInput(String(data.breakdown.cycleDays))
       })
       .catch(() => {})
-      .finally(() => setOrderListLoading(false))
+      .finally(() => {
+        if (request !== orderListRequest.current) return
+        setOrderListLoading(false)
+        setOrderListRecalculating(false)
+      })
+  }
+
+  function changeWhatIfCycle(days: number | null) {
+    const clamped = days === null ? null : Math.min(MAX_CYCLE_DAYS, Math.max(0, Math.round(days)))
+    setWhatIfCycle(clamped)
+    if (clamped !== null) setWhatIfInput(String(clamped))
+    if (whatIfTimer.current) clearTimeout(whatIfTimer.current)
+    whatIfTimer.current = setTimeout(() => loadOrderList(clamped, true), 250)
   }
 
   async function startBulkEdit() {
@@ -439,7 +475,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   useEffect(() => { loadData() }, [])
 
   useEffect(() => {
-    if (activeTab === 'orderlist') loadOrderList()
+    if (activeTab === 'orderlist') loadOrderList(whatIfCycle)
   }, [activeTab])
 
   const summary = useMemo(() => ({
@@ -1208,12 +1244,60 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                     <div className="bg-surface-1 rounded-2xl border border-border-subtle p-4 mb-3">
                       <p className="text-text-secondary text-[13px]">
                         Berekend voor <strong>{orderListCoverageDays} dagen</strong> voorraad
-                        {orderListCoverageDays > 0 && (
+                        {orderListBreakdown && (
                           <span className="text-text-tertiary ml-2">
-                            (levertijd {supplier.lead_time_days}d + inbound + marge + cyclus {supplier.order_cycle_days ?? 30}d)
+                            (levertijd {orderListBreakdown.leadTimeDays}d + inbound {orderListBreakdown.warehouseInboundDays}d + marge {orderListBreakdown.safetyMarginDays}d + cyclus {orderListBreakdown.cycleDays}d)
                           </span>
                         )}
                       </p>
+                      {orderListBreakdown && (
+                        <div className="mt-3 pt-3 border-t border-border-subtle">
+                          <div className="flex flex-wrap items-center gap-3">
+                            <label htmlFor="whatif-cycle" className="text-[13px] text-text-secondary shrink-0">
+                              Voorraad na binnenkomst
+                            </label>
+                            <input
+                              id="whatif-cycle"
+                              type="range"
+                              min={0}
+                              max={MAX_CYCLE_DAYS}
+                              step={1}
+                              value={whatIfCycle ?? orderListBreakdown.defaultCycleDays}
+                              onChange={e => changeWhatIfCycle(Number(e.target.value))}
+                              className="flex-1 min-w-[160px] accent-[var(--color-accent)]"
+                            />
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <input
+                                type="number"
+                                min={0}
+                                max={MAX_CYCLE_DAYS}
+                                value={whatIfInput}
+                                onChange={e => {
+                                  setWhatIfInput(e.target.value)
+                                  const n = parseInt(e.target.value, 10)
+                                  if (!isNaN(n)) changeWhatIfCycle(n)
+                                }}
+                                onBlur={() => setWhatIfInput(String(whatIfCycle ?? orderListBreakdown.defaultCycleDays))}
+                                className="w-20 px-2 py-1 rounded-lg bg-surface-2 border border-border-subtle text-[13px] text-text-primary text-right tabular-nums"
+                              />
+                              <span className="text-[13px] text-text-tertiary">dagen</span>
+                            </div>
+                            {orderListRecalculating && <span className="text-[12px] text-text-tertiary">berekenen…</span>}
+                          </div>
+                          <p className="text-[12px] text-text-tertiary mt-2">
+                            {whatIfCycle === null || whatIfCycle === orderListBreakdown.defaultCycleDays ? (
+                              <>Standaard cyclus van deze fabrikant ({orderListBreakdown.defaultCycleDays} dagen). Schuif om te zien wat een grotere of kleinere bestelling kost.</>
+                            ) : (
+                              <>
+                                Wat-als: niet opgeslagen. Standaard is {orderListBreakdown.defaultCycleDays} dagen.{' '}
+                                <button onClick={() => changeWhatIfCycle(null)} className="text-accent hover:text-accent-hover transition-colors">
+                                  Terug naar standaard
+                                </button>
+                              </>
+                            )}
+                          </p>
+                        </div>
+                      )}
                     </div>
 
                     {/* Header */}
@@ -1221,6 +1305,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                       <span className="w-24">SKU</span>
                       <span className="flex-1">Naam</span>
                       <span className="w-20 text-right">Voorraad</span>
+                      <span className="w-20 text-right">Onderweg</span>
                       <span className="w-20 text-right">Verkoop/d</span>
                       <span className="w-24 text-right">Nodig</span>
                       <span className="w-24 text-right">Bestellen</span>
@@ -1242,6 +1327,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                             <span className="text-text-tertiary font-mono text-[11px] w-24 shrink-0 truncate">{p.sku}</span>
                             <a href={`/products/${p.productId}`} className={`text-[13px] flex-1 truncate hover:text-accent transition-colors ${p.toOrder > 0 ? 'text-text-primary' : 'text-text-tertiary'}`}>{p.name}</a>
                             <span className="w-20 text-right text-[13px] tabular-nums text-text-secondary">{formatNumber(p.currentStock)}</span>
+                            <span className="w-20 text-right text-[13px] tabular-nums text-text-tertiary">{p.pendingQty > 0 ? formatNumber(p.pendingQty) : '—'}</span>
                             <span className="w-20 text-right text-[13px] tabular-nums text-text-secondary">{p.dailySales.toLocaleString('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span>
                             <span className="w-24 text-right text-[13px] tabular-nums text-text-secondary">{formatNumber(p.requiredStock)}</span>
                             <span className={`w-24 text-right text-[13px] tabular-nums font-semibold ${
