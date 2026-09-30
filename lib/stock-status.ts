@@ -35,7 +35,7 @@ export function calculateProductStatus(productId: number): ProductStatus | null 
     SELECT p.*, s.name as supplier_name, s.lead_time_days
     FROM products p
     LEFT JOIN suppliers s ON p.supplier_id = s.id
-    WHERE p.id = ? AND p.active = 1
+    WHERE p.id = ? AND p.active = 1 AND p.archived = 0
   `).get(productId) as {
     id: number; woo_product_id: number; sku: string; name: string; current_stock: number; price: number;
     supplier_id: number | null; supplier_name: string | null; lead_time_days: number | null
@@ -120,7 +120,7 @@ export function calculateProductStatus(productId: number): ProductStatus | null 
 
 export function getAllProductStatuses(): ProductStatus[] {
   const db = getDb()
-  const products = db.prepare('SELECT id FROM products WHERE active = 1').all() as { id: number }[]
+  const products = db.prepare('SELECT id FROM products WHERE active = 1 AND archived = 0').all() as { id: number }[]
   const statuses: ProductStatus[] = []
 
   for (const p of products) {
@@ -136,7 +136,7 @@ export function getAllProductStatuses(): ProductStatus[] {
 
 export function getProductStatusesBySupplier(supplierId: number): ProductStatus[] {
   const db = getDb()
-  const products = db.prepare('SELECT id FROM products WHERE active = 1 AND supplier_id = ?').all(supplierId) as { id: number }[]
+  const products = db.prepare('SELECT id FROM products WHERE active = 1 AND archived = 0 AND supplier_id = ?').all(supplierId) as { id: number }[]
   const statuses: ProductStatus[] = []
 
   for (const p of products) {

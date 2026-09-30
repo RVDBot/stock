@@ -152,6 +152,10 @@ function initSchema(db: Database.Database) {
       ALTER TABLE products ADD COLUMN specs TEXT NOT NULL DEFAULT '{}';
     `)
   }
+  // archived = no longer published in WooCommerce (set by sync); separate from active = manually ignored
+  if (!productColNames.has('archived')) {
+    db.exec(`ALTER TABLE products ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;`)
+  }
 
   // Supplier order_cycle_days migration
   if (!colNames.has('order_cycle_days')) {

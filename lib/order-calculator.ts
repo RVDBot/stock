@@ -56,7 +56,7 @@ export function calculateOrderList(supplierId: number): {
            st.fields as template_fields
     FROM products p
     LEFT JOIN spec_templates st ON p.spec_template_id = st.id
-    WHERE p.supplier_id = ? AND p.active = 1
+    WHERE p.supplier_id = ? AND p.active = 1 AND p.archived = 0
   `).all(supplierId) as { id: number; sku: string; name: string; current_stock: number; manual_daily_sales: number | null; specs: string | null; template_fields: string | null }[]
 
   log('info', `Bestellijst fabrikant ${supplierId}: ${products.length} producten, coverageDays=${coverageDays} (lead=${supplier.lead_time_days} + inbound=${warehouseInbound} + marge=${safetyMargin} + cyclus=${supplier.order_cycle_days})`)

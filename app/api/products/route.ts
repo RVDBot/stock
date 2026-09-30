@@ -10,6 +10,7 @@ export async function GET(req: NextRequest) {
   const productId = req.nextUrl.searchParams.get('id')
   const supplierId = req.nextUrl.searchParams.get('supplier_id')
   const inactive = req.nextUrl.searchParams.get('inactive')
+  const archived = req.nextUrl.searchParams.get('archived')
 
   // Return single product with specs
   if (productId) {
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest) {
     const db = getDb()
     const rows = db.prepare(`
       SELECT id as productId, sku, name FROM products
-      WHERE supplier_id = ? AND active = 1 AND spec_template_id IS NOT NULL AND specs != '{}'
+      WHERE supplier_id = ? AND active = 1 AND archived = 0 AND spec_template_id IS NOT NULL AND specs != '{}'
       ORDER BY name
     `).all(parseInt(supplierId, 10))
     return NextResponse.json(rows)
@@ -43,7 +44,14 @@ export async function GET(req: NextRequest) {
   // Return inactive (ignored) products
   if (inactive === '1') {
     const db = getDb()
-    const products = db.prepare('SELECT id as productId, sku, name, supplier_id as supplierId FROM products WHERE active = 0 ORDER BY name').all()
+    const products = db.prepare('SELECT id as productId, sku, name, supplier_id as supplierId FROM products WHERE active = 0 AND archived = 0 ORDER BY name').all()
+    return NextResponse.json(products)
+  }
+
+  // Return archived products (no longer published in WooCommerce)
+  if (archived === '1') {
+    const db = getDb()
+    const products = db.prepare('SELECT id as productId, sku, name, supplier_id as supplierId, updated_at as updatedAt FROM products WHERE archived = 1 ORDER BY name').all()
     return NextResponse.json(products)
   }
 

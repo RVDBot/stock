@@ -14,14 +14,16 @@ function setSetting(key: string, value: string) {
 
 export async function syncProducts() {
   const db = getDb()
-  const products = await fetchAllProducts()
+  const allProducts = await fetchAllProducts()
+  // Only published products belong in the dashboard; drafts, private, pending etc. get archived
+  const products = allProducts.filter(p => p.status === 'publish')
   const today = new Date().toISOString().slice(0, 10)
 
   const upsertProduct = db.prepare(`
     INSERT INTO products (woo_product_id, sku, name, current_stock, price, updated_at)
     VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(sku) DO UPDATE SET
-      woo_product_id = ?, name = ?, current_stock = ?, price = ?, updated_at = CURRENT_TIMESTAMP
+      woo_product_id = ?, name = ?, current_stock = ?, price = ?, archived = 0, updated_at = CURRENT_TIMESTAMP
   `)
 
   const upsertSnapshot = db.prepare(`
@@ -108,17 +110,22 @@ export async function syncProducts() {
   }
 
   let synced = 0
-  const syncedWooIds = new Set<number>()
   db.transaction(() => {
+    const syncedSkus = JSON.stringify([...skuMap.keys()])
+    const unarchived = db.prepare('SELECT sku FROM products WHERE archived = 1 AND sku IN (SELECT value FROM json_each(?))')
+      .all(syncedSkus) as { sku: string }[]
+
     for (const p of skuMap.values()) {
       const stock = p.stock_quantity ?? 0
       const price = parseFloat(p.price) || 0
 
       // Find existing records that could conflict
       const existingBySku = db.prepare('SELECT id, woo_product_id FROM products WHERE sku = ?').get(p.sku) as { id: number; woo_product_id: number } | undefined
-      const existingByWooId = db.prepare('SELECT id, sku FROM products WHERE woo_product_id = ?').get(p.id) as { id: number; sku: string } | undefined
+      // Prefer the row that already has this SKU: remapped composite parts share one woo id
+      const existingByWooId = db.prepare('SELECT id, sku FROM products WHERE woo_product_id = ? ORDER BY (sku = ?) DESC LIMIT 1').get(p.id, p.sku) as { id: number; sku: string } | undefined
 
-      if (existingByWooId && existingByWooId.sku !== p.sku) {
+      // Only treat it as a SKU change when the old SKU is no longer live; otherwise it's a sibling part
+      if (existingByWooId && existingByWooId.sku !== p.sku && !skuMap.has(existingByWooId.sku)) {
         // This woo_product_id exists with a different SKU (SKU changed in WooCommerce)
         if (existingBySku && existingBySku.id !== existingByWooId.id) {
           // Another record already has the target SKU — merge: move its references to our record, then reassign
@@ -144,15 +151,24 @@ export async function syncProducts() {
 
       const row = db.prepare('SELECT id FROM products WHERE sku = ?').get(p.sku) as { id: number }
       upsertSnapshot.run(row.id, today, stock, stock)
-      syncedWooIds.add(p.id)
       synced++
     }
 
-    // Mark products that no longer exist in WooCommerce as inactive (don't delete — preserves history)
-    const deactivated = db.prepare('UPDATE products SET active = 0 WHERE woo_product_id NOT IN (SELECT value FROM json_each(?)) AND active = 1')
-      .run(JSON.stringify([...syncedWooIds]))
-    if (deactivated.changes > 0) {
-      log('info', `Sync: ${deactivated.changes} producten gedeactiveerd (niet meer in WooCommerce)`)
+    if (unarchived.length > 0) {
+      log('info', `Sync: ${unarchived.length} producten uit archief gehaald (weer gepubliceerd): ${unarchived.map(r => r.sku).join(', ')}`)
+    }
+
+    // Archive products whose SKU is no longer published in WooCommerce (don't delete — preserves history).
+    // Matched on SKU, not woo_product_id: remapped composite parts share their bundle's woo id.
+    if (skuMap.size === 0) {
+      log('warn', 'Sync: geen gepubliceerde producten ontvangen, archiveren overgeslagen')
+    } else {
+      const toArchive = db.prepare('SELECT sku FROM products WHERE archived = 0 AND sku NOT IN (SELECT value FROM json_each(?))')
+        .all(syncedSkus) as { sku: string }[]
+      if (toArchive.length > 0) {
+        db.prepare('UPDATE products SET archived = 1 WHERE archived = 0 AND sku NOT IN (SELECT value FROM json_each(?))').run(syncedSkus)
+        log('info', `Sync: ${toArchive.length} producten gearchiveerd (niet meer gepubliceerd in WooCommerce): ${toArchive.map(r => r.sku).join(', ')}`)
+      }
     }
   })()
 

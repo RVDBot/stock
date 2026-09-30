@@ -96,7 +96,8 @@ export async function fetchAllProducts(): Promise<WooProduct[]> {
           stock_quantity: stock,
           manage_stock: v.manage_stock || p.manage_stock,
           price: v.price,
-          status: v.status,
+          // A variation is only live when its parent is published too
+          status: p.status === 'publish' ? v.status : p.status,
         })
       }
     } else {

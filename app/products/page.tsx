@@ -28,6 +28,14 @@ interface IgnoredProduct {
   supplierId: number | null
 }
 
+interface ArchivedProduct {
+  productId: number
+  sku: string
+  name: string
+  supplierId: number | null
+  updatedAt: string
+}
+
 function formatNumber(n: number): string {
   return n.toLocaleString('nl-NL')
 }
@@ -41,6 +49,7 @@ const STATUS_DOT = {
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [ignoredProducts, setIgnoredProducts] = useState<IgnoredProduct[]>([])
+  const [archivedProducts, setArchivedProducts] = useState<ArchivedProduct[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
@@ -52,6 +61,7 @@ export default function ProductsPage() {
   const [bulkSupplierId, setBulkSupplierId] = useState('')
   const [bulkAssigning, setBulkAssigning] = useState(false)
   const [showIgnored, setShowIgnored] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
   const [sortCol, setSortCol] = useState<'sku' | 'name' | 'supplier' | 'stock'>('sku')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const lastClickedIndex = useRef<number | null>(null)
@@ -61,11 +71,13 @@ export default function ProductsPage() {
     Promise.all([
       apiFetch('/api/products').then(r => r.json()),
       apiFetch('/api/products?inactive=1').then(r => r.json()),
+      apiFetch('/api/products?archived=1').then(r => r.json()),
       apiFetch('/api/suppliers').then(r => r.json()),
       apiFetch('/api/settings').then(r => r.json()),
-    ]).then(([prodData, ignoredData, suppData, settData]) => {
+    ]).then(([prodData, ignoredData, archivedData, suppData, settData]) => {
       setProducts(Array.isArray(prodData) ? prodData : [])
       setIgnoredProducts(Array.isArray(ignoredData) ? ignoredData : [])
+      setArchivedProducts(Array.isArray(archivedData) ? archivedData : [])
       setSuppliers(Array.isArray(suppData) ? suppData : [])
       const settings = settData.settings || {}
       setLastSyncAt(settings.last_sync_at || '')
@@ -394,6 +406,38 @@ export default function ProductsPage() {
                     >
                       Alles herstellen
                     </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Archived products: no longer published in WooCommerce, managed by sync */}
+            {archivedProducts.length > 0 && (
+              <div className="mt-6">
+                <button
+                  onClick={() => setShowArchived(!showArchived)}
+                  className="flex items-center gap-2 text-[13px] font-semibold text-text-secondary hover:text-text-primary transition-colors mb-2"
+                >
+                  <span className="text-[11px]">{showArchived ? '▼' : '▶'}</span>
+                  Archief ({archivedProducts.length})
+                </button>
+                {showArchived && (
+                  <div className="space-y-1">
+                    <p className="text-text-tertiary text-[12px] px-1 mb-2">
+                      Niet (meer) gepubliceerd in WooCommerce. Komt een product terug, dan haalt de sync het automatisch uit het archief.
+                    </p>
+                    {archivedProducts.map(p => (
+                      <div
+                        key={p.productId}
+                        className="flex items-center gap-3 px-3 py-2 rounded-xl bg-surface-1 border border-border-subtle"
+                      >
+                        <span className="text-text-tertiary font-mono text-[11px] w-24 shrink-0">{p.sku}</span>
+                        <span className="text-text-tertiary text-[13px] flex-1">{p.name}</span>
+                        <span className="text-text-tertiary text-[11px] shrink-0">
+                          laatst gezien {new Date(p.updatedAt.replace(' ', 'T') + 'Z').toLocaleDateString('nl-NL')}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
