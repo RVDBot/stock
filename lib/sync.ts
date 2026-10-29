@@ -136,6 +136,7 @@ export async function syncProducts() {
           db.prepare('UPDATE sales_history SET product_id = ? WHERE product_id = ? AND date NOT IN (SELECT date FROM sales_history WHERE product_id = ?)').run(keepId, oldId, keepId)
           db.prepare('DELETE FROM sales_history WHERE product_id = ?').run(oldId)
           db.prepare('UPDATE purchase_orders SET product_id = ? WHERE product_id = ?').run(keepId, oldId)
+          db.prepare('UPDATE supplier_product_aliases SET product_id = ? WHERE product_id = ?').run(keepId, oldId)
           db.prepare('DELETE FROM products WHERE id = ?').run(oldId)
           log('info', `Product ${oldId} (sku=${p.sku}) samengevoegd met ${keepId} (woo_id=${p.id})`)
         }

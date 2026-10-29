@@ -1,5 +1,6 @@
 import { getDb } from '@/lib/db'
 import { getExpectedDailySales, getWeightedDailySales, getDataWeeks } from '@/lib/prediction'
+import { getPendingOrders } from '@/lib/orders'
 
 export type StockStatus = 'order_now' | 'soon' | 'on_track'
 
@@ -50,11 +51,7 @@ export function calculateProductStatus(productId: number): ProductStatus | null 
   const orderDeadline = leadTime + warehouseDays
 
   // Pending purchase orders — each with its own arrival date
-  const pendingOrders = db.prepare(`
-    SELECT quantity, expected_arrival
-    FROM purchase_orders
-    WHERE product_id = ? AND status IN ('ordered', 'shipped')
-  `).all(productId) as { quantity: number; expected_arrival: string | null }[]
+  const pendingOrders = getPendingOrders(db, productId)
 
   const totalPendingQty = pendingOrders.reduce((s, o) => s + o.quantity, 0)
   const earliestArrival = pendingOrders

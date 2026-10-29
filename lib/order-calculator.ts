@@ -1,5 +1,6 @@
 import { getDb } from '@/lib/db'
 import { log } from '@/lib/logger'
+import { getPendingOrders } from '@/lib/orders'
 
 interface Event {
   expected_date: string | null
@@ -99,12 +100,6 @@ export function calculateOrderList(supplierId: number, cycleDaysOverride?: numbe
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
-  // Stock already on its way counts towards what we need (same statuses as stock-status.ts)
-  const pendingStmt = db.prepare(`
-    SELECT COALESCE(SUM(quantity), 0) as qty FROM purchase_orders
-    WHERE product_id = ? AND status IN ('ordered', 'shipped')
-  `)
-
   const result: ProductForOrder[] = []
 
   for (const product of products) {
@@ -119,7 +114,8 @@ export function calculateOrderList(supplierId: number, cycleDaysOverride?: numbe
       ?? (salesData.days > 0 ? (salesData.total || 0) / 90 : 0)
 
     const { price: unitPrice, currency } = getUnitPrice(product.specs, product.template_fields)
-    const pendingQty = (pendingStmt.get(product.id) as { qty: number }).qty
+    // Stock already on its way counts towards what we need (same statuses as stock-status.ts)
+    const pendingQty = getPendingOrders(db, product.id).reduce((s, o) => s + o.quantity, 0)
 
     if (dailySales <= 0) {
       result.push({
