@@ -3,38 +3,14 @@ import { requireAuth } from '@/lib/auth-guard'
 import { getDb } from '@/lib/db'
 import Anthropic from '@anthropic-ai/sdk'
 import { log } from '@/lib/logger'
-import { decryptValue } from '@/lib/encrypt'
-
-const LOOKUP_WINDOW_MS = 60_000
-const MAX_LOOKUPS = 10
-const lookupCounts = new Map<string, { count: number; firstCall: number }>()
-
-function getSettingInt(db: ReturnType<typeof getDb>, key: string, fallback: number): number {
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined
-  return row ? parseInt(row.value, 10) || fallback : fallback
-}
-
-function addTokenUsage(db: ReturnType<typeof getDb>, input: number, output: number) {
-  const upsert = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?')
-  const currentInput = getSettingInt(db, 'ai_total_input_tokens', 0)
-  const currentOutput = getSettingInt(db, 'ai_total_output_tokens', 0)
-  upsert.run('ai_total_input_tokens', String(currentInput + input), String(currentInput + input))
-  upsert.run('ai_total_output_tokens', String(currentOutput + output), String(currentOutput + output))
-}
+import { getAiConfig, getClaudeApiKey, checkTokenCap, addTokenUsage, checkRateLimit } from '@/lib/ai'
 
 export async function POST(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
 
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
-  const ts = Date.now()
-  const entry = lookupCounts.get(ip)
-  if (entry && ts - entry.firstCall < LOOKUP_WINDOW_MS) {
-    entry.count++
-    if (entry.count > MAX_LOOKUPS) {
-      return NextResponse.json({ error: 'Te veel verzoeken. Probeer het over een minuut opnieuw.' }, { status: 429 })
-    }
-  } else {
-    lookupCounts.set(ip, { count: 1, firstCall: ts })
+  if (!checkRateLimit(ip)) {
+    return NextResponse.json({ error: 'Te veel verzoeken. Probeer het over een minuut opnieuw.' }, { status: 429 })
   }
 
   const { id } = await req.json()
@@ -52,20 +28,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Event met id ${id} niet gevonden` }, { status: 404 })
   }
 
-  const apiKeyRaw = (db.prepare("SELECT value FROM settings WHERE key = 'claude_api_key'").get() as { value: string } | undefined)?.value
-  const apiKey = apiKeyRaw ? decryptValue(apiKeyRaw) : undefined
+  const apiKey = getClaudeApiKey(db)
   if (!apiKey) {
     return NextResponse.json({ error: 'Claude API key niet geconfigureerd. Ga naar Instellingen.' }, { status: 400 })
   }
 
-  // Token cap check
-  const tokenCap = getSettingInt(db, 'ai_token_cap', 0)
-  if (tokenCap > 0) {
-    const totalUsed = getSettingInt(db, 'ai_total_input_tokens', 0) + getSettingInt(db, 'ai_total_output_tokens', 0)
-    if (totalUsed >= tokenCap) {
-      return NextResponse.json({ error: `Token limiet bereikt (${totalUsed.toLocaleString('nl-NL')} / ${tokenCap.toLocaleString('nl-NL')}). Verhoog het limiet in Instellingen.` }, { status: 429 })
-    }
+  const capError = checkTokenCap(db)
+  if (capError) {
+    return NextResponse.json({ error: capError }, { status: 429 })
   }
+
+  const { model, maxTokens } = getAiConfig(db, 'event_lookup')
 
   // Build context: if sub-event, include parent name
   let eventLabel = event.name
@@ -83,8 +56,8 @@ export async function POST(req: NextRequest) {
   try {
     const client = new Anthropic({ apiKey })
     const message = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
+      model: model,
+      max_tokens: maxTokens,
       tools: [{ type: 'web_search_20250305' as const, name: 'web_search', max_uses: 3 }],
       messages: [{
         role: 'user',
@@ -93,7 +66,7 @@ export async function POST(req: NextRequest) {
     })
 
     // Track token usage
-    addTokenUsage(db, message.usage.input_tokens, message.usage.output_tokens)
+    addTokenUsage(db, 'event_lookup', message.usage.input_tokens, message.usage.output_tokens)
 
     // Extract text from response (may include tool use blocks for web search)
     const textBlocks = message.content.filter(b => b.type === 'text')
@@ -106,10 +79,10 @@ export async function POST(req: NextRequest) {
 
     if (dateMatch) {
       db.prepare('UPDATE events SET expected_date = ? WHERE id = ?').run(dateMatch[0], id)
-      log('info', `AI datum gevonden voor "${eventLabel}": ${dateMatch[0]} (tokens: ${tokensUsed}, web search)`)
+      log('info', `AI datum gevonden voor "${eventLabel}": ${dateMatch[0]} (tokens: ${tokensUsed}, ${model})`)
       return NextResponse.json({ success: true, date: dateMatch[0] })
     } else {
-      log('warn', `AI kon datum niet vinden voor "${eventLabel}": ${text} (tokens: ${tokensUsed})`)
+      log('warn', `AI kon datum niet vinden voor "${eventLabel}": ${text} (tokens: ${tokensUsed}, ${model})`)
       return NextResponse.json({ success: true, date: null, message: 'Datum niet gevonden' })
     }
   } catch (e) {

@@ -2,13 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-guard'
 import { getDb } from '@/lib/db'
 import { encryptValue, decryptValue, isEncryptionEnabled } from '@/lib/encrypt'
+import { AI_FUNCTION_KEYS, modelSettingKey, maxTokensSettingKey } from '@/lib/ai-config'
 
 const READ_SECRET_KEYS = ['auth_password_hash', 'auth_session_token', 'woo_consumer_secret', 'claude_api_key']
 const ENCRYPTED_KEYS = new Set(['woo_consumer_secret', 'claude_api_key'])
 
 const ALLOWED_WRITE_KEYS = new Set([
   'woo_url', 'woo_consumer_key', 'woo_consumer_secret',
-  'claude_api_key', 'ai_max_tokens_per_lookup', 'ai_token_cap',
+  'claude_api_key', 'ai_token_cap',
+  ...AI_FUNCTION_KEYS.flatMap(fn => [modelSettingKey(fn), maxTokensSettingKey(fn)]),
   'warehouse_inbound_days', 'safety_margin_days',
   'last_sync_at', 'last_sync_status',
   'ai_total_input_tokens', 'ai_total_output_tokens',
