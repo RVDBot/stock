@@ -3,6 +3,9 @@
 import { useEffect, useState, useMemo, useCallback, useRef, use } from 'react'
 import Nav from '@/components/Nav'
 import { apiFetch } from '@/lib/api'
+import OrderForm from '@/components/OrderForm'
+import OrderHistory from '@/components/OrderHistory'
+import { ORDER_STATUS_LABELS, type Order } from '@/lib/order-types'
 
 interface Supplier {
   id: number
@@ -60,18 +63,6 @@ interface ProductStatus {
   pendingOrderArrival: string | null
   dataWeeks: number
   price: number
-}
-
-interface PurchaseOrder {
-  id: number
-  supplier_id: number
-  product_id: number
-  quantity: number
-  order_date: string
-  expected_arrival: string | null
-  status: string
-  notes: string | null
-  created_at: string
 }
 
 function formatNumber(n: number): string {
@@ -135,7 +126,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
 
   const [supplier, setSupplier] = useState<Supplier | null>(null)
   const [products, setProducts] = useState<ProductStatus[]>([])
-  const [orders, setOrders] = useState<PurchaseOrder[]>([])
+  const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [lastSyncAt, setLastSyncAt] = useState('')
@@ -159,10 +150,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
 
   // Order form state
   const [showOrderForm, setShowOrderForm] = useState(false)
-  const [orderProductId, setOrderProductId] = useState<number | ''>('')
-  const [orderQty, setOrderQty] = useState('')
-  const [orderArrival, setOrderArrival] = useState('')
-  const [submitting, setSubmitting] = useState(false)
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null)
   const [copied, setCopied] = useState(false)
   const [activeTab, setActiveTab] = useState<'products' | 'orderlist' | 'templates'>('products')
   const [orderList, setOrderList] = useState<OrderListProduct[]>([])
@@ -308,7 +296,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
     Promise.all([
       apiFetch(`/api/suppliers?id=${id}`).then(r => r.json()),
       apiFetch(`/api/products?supplier_id=${id}`).then(r => r.json()),
-      apiFetch(`/api/purchase-orders?supplier_id=${id}`).then(r => r.json()),
+      apiFetch(`/api/orders?supplier_id=${id}&status=all`).then(r => r.json()),
       apiFetch('/api/settings').then(r => r.json()),
       apiFetch(`/api/spec-templates?supplier_id=${id}`).then(r => r.json()),
       apiFetch(`/api/products?supplier_id=${id}&with_specs=1`).then(r => r.json()),
@@ -485,32 +473,11 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   }), [products])
 
   function getOrdersForProduct(productId: number) {
-    return orders.filter(o => o.product_id === productId && o.status !== 'received')
-  }
-
-  async function handleSubmitOrder(e: React.FormEvent) {
-    e.preventDefault()
-    if (!orderProductId || !orderQty) return
-    setSubmitting(true)
-    try {
-      await apiFetch('/api/purchase-orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          supplier_id: parseInt(id, 10),
-          product_id: orderProductId,
-          quantity: parseInt(orderQty, 10),
-          expected_arrival: orderArrival || undefined,
-        }),
-      })
-      setShowOrderForm(false)
-      setOrderProductId('')
-      setOrderQty('')
-      setOrderArrival('')
-      loadData()
-    } finally {
-      setSubmitting(false)
-    }
+    return orders
+      .filter(o => o.status !== 'received')
+      .flatMap(o => o.lines
+        .filter(l => l.product_id === productId)
+        .map(l => ({ id: o.id, quantity: l.quantity, expected_arrival: o.expected_arrival, status: o.status })))
   }
 
   function handleCopyOrderList() {
@@ -836,7 +803,7 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                     {copied ? 'Gekopieerd!' : 'Kopieer bestellijst'}
                   </button>
                   <button
-                    onClick={() => setShowOrderForm(!showOrderForm)}
+                    onClick={() => { setEditingOrder(null); setShowOrderForm(!showOrderForm) }}
                     className="text-[12px] font-medium px-3 py-1.5 rounded-lg bg-accent text-white hover:bg-accent-hover transition-all duration-150"
                   >
                     Bestelling registreren
@@ -846,65 +813,15 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
             </div>
 
             {/* Order form */}
-            {showOrderForm && (
-              <div className="bg-surface-1 rounded-2xl border border-border-subtle p-4 mb-4 animate-row">
-                <h3 className="text-[14px] font-semibold text-text-primary mb-3">Nieuwe bestelling</h3>
-                <form onSubmit={handleSubmitOrder} className="flex flex-wrap items-end gap-3">
-                  <div className="flex-1 min-w-[180px]">
-                    <label className="text-[11px] text-text-tertiary font-semibold uppercase tracking-wider block mb-1">Product</label>
-                    <select
-                      value={orderProductId}
-                      onChange={e => setOrderProductId(e.target.value ? parseInt(e.target.value, 10) : '')}
-                      className="w-full text-[13px] px-3 py-2 rounded-lg bg-surface-0 border border-border-subtle text-text-primary"
-                      required
-                    >
-                      <option value="">Selecteer product...</option>
-                      {products.map(p => (
-                        <option key={p.productId} value={p.productId}>
-                          {p.sku} — {p.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="w-28">
-                    <label className="text-[11px] text-text-tertiary font-semibold uppercase tracking-wider block mb-1">Aantal</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={orderQty}
-                      onChange={e => setOrderQty(e.target.value)}
-                      className="w-full text-[13px] px-3 py-2 rounded-lg bg-surface-0 border border-border-subtle text-text-primary"
-                      required
-                      placeholder="0"
-                    />
-                  </div>
-                  <div className="w-40">
-                    <label className="text-[11px] text-text-tertiary font-semibold uppercase tracking-wider block mb-1">Verwachte aankomst</label>
-                    <input
-                      type="date"
-                      value={orderArrival}
-                      onChange={e => setOrderArrival(e.target.value)}
-                      className="w-full text-[13px] px-3 py-2 rounded-lg bg-surface-0 border border-border-subtle text-text-primary"
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      type="submit"
-                      disabled={submitting}
-                      className="text-[12px] font-medium px-4 py-2 rounded-lg bg-accent text-white hover:bg-accent-hover disabled:opacity-40 transition-all duration-150"
-                    >
-                      {submitting ? 'Opslaan...' : 'Opslaan'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowOrderForm(false)}
-                      className="text-[12px] font-medium px-3 py-2 rounded-lg bg-surface-2 border border-border-subtle text-text-secondary hover:text-text-primary transition-all duration-150"
-                    >
-                      Annuleren
-                    </button>
-                  </div>
-                </form>
-              </div>
+            {(showOrderForm || editingOrder) && (
+              <OrderForm
+                key={editingOrder?.id ?? 'new'}
+                supplierId={parseInt(id, 10)}
+                products={products}
+                order={editingOrder ?? undefined}
+                onSaved={() => { setShowOrderForm(false); setEditingOrder(null); loadData() }}
+                onCancel={() => { setShowOrderForm(false); setEditingOrder(null) }}
+              />
             )}
 
             {/* Tab buttons */}
@@ -1200,8 +1117,8 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                                   <p key={o.id} className="text-[11px] text-text-tertiary">
                                     Bestelling #{o.id}: {formatNumber(o.quantity)} stuks
                                     {o.expected_arrival && ` — verwacht ${new Date(o.expected_arrival).toLocaleDateString('nl-NL')}`}
-                                    <span className={`ml-1 ${o.status === 'pending' ? 'text-warning' : o.status === 'ordered' ? 'text-accent' : 'text-text-tertiary'}`}>
-                                      ({o.status})
+                                    <span className={`ml-1 ${o.status === 'shipped' ? 'text-warning' : 'text-accent'}`}>
+                                      ({ORDER_STATUS_LABELS[o.status]})
                                     </span>
                                   </p>
                                 ))}
@@ -1606,51 +1523,11 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
             )}
 
             {/* Orders overview */}
-            <div>
-              <h2 className="text-[14px] font-semibold text-text-primary mb-2">Bestellingen ({orders.length})</h2>
-              {orders.length === 0 ? (
-                <div className="bg-surface-1 rounded-2xl border border-border-subtle p-12 text-center">
-                  <p className="text-text-tertiary text-[13px]">Nog geen bestellingen geregistreerd.</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {orders.map((o, i) => {
-                    const product = products.find(p => p.productId === o.product_id)
-                    const statusColor = o.status === 'ordered' ? 'text-accent' : o.status === 'shipped' ? 'text-warning' : o.status === 'received' ? 'text-success' : 'text-text-tertiary'
-                    return (
-                      <div
-                        key={o.id}
-                        className="bg-surface-1 rounded-2xl border border-border-subtle p-4 animate-row"
-                        style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-0.5">
-                              <span className="text-text-primary text-[13px] font-semibold">
-                                #{o.id} — {product?.name || `Product #${o.product_id}`}
-                              </span>
-                              <span className={`text-[11px] font-semibold ${statusColor}`}>
-                                {o.status}
-                              </span>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-text-secondary">
-                              <span>{formatNumber(o.quantity)} stuks</span>
-                              <span>Besteld: {new Date(o.order_date).toLocaleDateString('nl-NL')}</span>
-                              {o.expected_arrival && (
-                                <span>Verwacht: {new Date(o.expected_arrival).toLocaleDateString('nl-NL')}</span>
-                              )}
-                              {o.notes && (
-                                <span className="text-text-tertiary">{o.notes}</span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
+            <OrderHistory
+              orders={orders}
+              onEdit={o => { setShowOrderForm(false); setEditingOrder(o); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+              onChanged={loadData}
+            />
           </>
         )}
       </main>
