@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Nav from '@/components/Nav'
 import { apiFetch } from '@/lib/api'
+import { AI_FUNCTIONS, AI_FUNCTION_KEYS, FALLBACK_MODELS, MAX_TOKENS_LIMIT, modelSettingKey, maxTokensSettingKey, usageSettingKey, type AiFunction } from '@/lib/ai-config'
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
@@ -28,7 +29,13 @@ export default function SettingsPage() {
   const [claudeExpanded, setClaudeExpanded] = useState(false)
 
   // Event settings
-  const [aiMaxTokens, setAiMaxTokens] = useState('100')
+  const [aiConfig, setAiConfig] = useState<Record<AiFunction, { model: string; maxTokens: string }>>(() =>
+    Object.fromEntries(AI_FUNCTION_KEYS.map(fn => [fn, { model: AI_FUNCTIONS[fn].defaultModel, maxTokens: String(AI_FUNCTIONS[fn].defaultMaxTokens) }])) as Record<AiFunction, { model: string; maxTokens: string }>
+  )
+  const [aiUsage, setAiUsage] = useState<Record<AiFunction, { input: number; output: number }>>(() =>
+    Object.fromEntries(AI_FUNCTION_KEYS.map(fn => [fn, { input: 0, output: 0 }])) as Record<AiFunction, { input: number; output: number }>
+  )
+  const [aiModels, setAiModels] = useState<{ id: string; name: string }[]>(FALLBACK_MODELS)
   const [aiTokenCap, setAiTokenCap] = useState('0')
   const [eventSaving, setEventSaving] = useState(false)
   const [eventMsg, setEventMsg] = useState('')
@@ -65,7 +72,17 @@ export default function SettingsPage() {
       setWooConsumerKey(settings.woo_consumer_key || '')
       setHasWooSecret(settings.has_woo_consumer_secret === '1')
       setHasClaudeKey(settings.has_claude_api_key === '1')
-      setAiMaxTokens(settings.ai_max_tokens_per_lookup || '100')
+      setAiConfig(Object.fromEntries(AI_FUNCTION_KEYS.map(fn => [fn, {
+        model: settings[modelSettingKey(fn)] || AI_FUNCTIONS[fn].defaultModel,
+        maxTokens: settings[maxTokensSettingKey(fn)] || String(AI_FUNCTIONS[fn].defaultMaxTokens),
+      }])) as Record<AiFunction, { model: string; maxTokens: string }>)
+      setAiUsage(Object.fromEntries(AI_FUNCTION_KEYS.map(fn => [fn, {
+        input: parseInt(settings[usageSettingKey(fn, 'input')] || '0', 10),
+        output: parseInt(settings[usageSettingKey(fn, 'output')] || '0', 10),
+      }])) as Record<AiFunction, { input: number; output: number }>)
+      if (settings.has_claude_api_key === '1') {
+        apiFetch('/api/ai/models').then(r => r.json()).then(d => { if (Array.isArray(d.models)) setAiModels(d.models) }).catch(() => {})
+      }
       setAiTokenCap(settings.ai_token_cap || '0')
       setTotalInputTokens(parseInt(settings.ai_total_input_tokens || '0', 10))
       setTotalOutputTokens(parseInt(settings.ai_total_output_tokens || '0', 10))
@@ -191,7 +208,13 @@ export default function SettingsPage() {
       await apiFetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ settings: { ai_max_tokens_per_lookup: aiMaxTokens, ai_token_cap: aiTokenCap } }),
+        body: JSON.stringify({ settings: {
+          ai_token_cap: aiTokenCap,
+          ...Object.fromEntries(AI_FUNCTION_KEYS.flatMap(fn => [
+            [modelSettingKey(fn), aiConfig[fn].model],
+            [maxTokensSettingKey(fn), String(Math.min(MAX_TOKENS_LIMIT, Math.max(1, parseInt(aiConfig[fn].maxTokens, 10) || AI_FUNCTIONS[fn].defaultMaxTokens)))],
+          ])),
+        } }),
       })
       setEventMsg('Opgeslagen')
       setTimeout(() => setEventMsg(''), 3000)
@@ -287,6 +310,17 @@ export default function SettingsPage() {
                     <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-0.5">Totaal</p>
                     <p className="text-[22px] font-bold text-accent tracking-tight leading-none tabular-nums">{(totalInputTokens + totalOutputTokens).toLocaleString('nl-NL')}</p>
                   </div>
+                </div>
+                <div className="mt-4 pt-3 border-t border-border-subtle space-y-1">
+                  {AI_FUNCTION_KEYS.map(fn => (
+                    <div key={fn} className="flex items-center justify-between text-[12px]">
+                      <span className="text-text-secondary">{AI_FUNCTIONS[fn].label}</span>
+                      <span className="text-text-primary tabular-nums">
+                        {(aiUsage[fn].input + aiUsage[fn].output).toLocaleString('nl-NL')}
+                        <span className="text-text-tertiary"> ({aiUsage[fn].input.toLocaleString('nl-NL')} in / {aiUsage[fn].output.toLocaleString('nl-NL')} uit)</span>
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -415,22 +449,42 @@ export default function SettingsPage() {
 
             {/* Evenement instellingen */}
             <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5">
-              <h2 className="text-[14px] font-semibold text-text-primary mb-3">Evenement instellingen</h2>
-              <div className="grid grid-cols-2 gap-3 mb-3">
-                <div>
-                  <label className={labelClass}>Max tokens per AI lookup</label>
-                  <input
-                    type="number"
-                    className={inputClass}
-                    value={aiMaxTokens}
-                    onChange={e => setAiMaxTokens(e.target.value)}
-                    min="10"
-                    max="4096"
-                  />
-                  <p className="text-text-tertiary text-[12px] mt-1">
-                    Max output tokens per opzoeking. Standaard: 100.
-                  </p>
+              <h2 className="text-[14px] font-semibold text-text-primary mb-3">AI instellingen</h2>
+              <div className="mb-4">
+                <div className="grid grid-cols-[1fr_minmax(0,220px)_110px] gap-3 mb-1">
+                  <span className={labelClass}>Functie</span>
+                  <span className={labelClass}>Model</span>
+                  <span className={labelClass}>Max tokens</span>
                 </div>
+                {AI_FUNCTION_KEYS.map(fn => {
+                  const current = aiConfig[fn]
+                  const options = aiModels.some(m => m.id === current.model) ? aiModels : [{ id: current.model, name: current.model }, ...aiModels]
+                  return (
+                    <div key={fn} className="grid grid-cols-[1fr_minmax(0,220px)_110px] gap-3 items-center mb-2">
+                      <span className="text-[13px] text-text-primary">{AI_FUNCTIONS[fn].label}</span>
+                      <select
+                        className={inputClass}
+                        value={current.model}
+                        onChange={e => setAiConfig(prev => ({ ...prev, [fn]: { ...prev[fn], model: e.target.value } }))}
+                      >
+                        {options.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      </select>
+                      <input
+                        type="number"
+                        className={inputClass}
+                        value={current.maxTokens}
+                        min="1"
+                        max={MAX_TOKENS_LIMIT}
+                        onChange={e => setAiConfig(prev => ({ ...prev, [fn]: { ...prev[fn], maxTokens: e.target.value } }))}
+                      />
+                    </div>
+                  )
+                })}
+                <p className="text-text-tertiary text-[12px] mt-1">
+                  Max output tokens per aanroep. Te laag = afgekapt antwoord.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                 <div>
                   <label className={labelClass}>Token limiet (totaal)</label>
                   <input
