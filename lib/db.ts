@@ -26,7 +26,7 @@ export function getDb(): Database.Database {
   return _db
 }
 
-function initSchema(db: Database.Database) {
+export function initSchema(db: Database.Database) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS settings (
       key   TEXT PRIMARY KEY,
@@ -173,5 +173,71 @@ function initSchema(db: Database.Database) {
   }
   if (!eventColNames.has('parent_id')) {
     db.exec(`ALTER TABLE events ADD COLUMN parent_id INTEGER REFERENCES events(id) ON DELETE CASCADE;`)
+  }
+
+  // Orders: purchase_orders become order lines grouped under an order
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS orders (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      supplier_id      INTEGER NOT NULL REFERENCES suppliers(id),
+      order_date       TEXT NOT NULL,
+      supplier_ref     TEXT,
+      expected_arrival TEXT,
+      status           TEXT NOT NULL DEFAULT 'ordered',
+      notes            TEXT,
+      created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS supplier_product_aliases (
+      id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+      supplier_id          INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+      alias_key            TEXT NOT NULL,
+      supplier_code        TEXT,
+      supplier_description TEXT,
+      product_id           INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (supplier_id, alias_key)
+    );
+  `)
+
+  const poCols = new Set((db.prepare("PRAGMA table_info(purchase_orders)").all() as { name: string }[]).map(c => c.name))
+  if (!poCols.has('order_id')) {
+    db.exec(`
+      ALTER TABLE purchase_orders ADD COLUMN order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE;
+      ALTER TABLE purchase_orders ADD COLUMN supplier_code TEXT;
+      ALTER TABLE purchase_orders ADD COLUMN supplier_description TEXT;
+    `)
+  }
+
+  // Each legacy single-product order becomes an order with one line
+  const loose = db.prepare('SELECT * FROM purchase_orders WHERE order_id IS NULL').all() as {
+    id: number; supplier_id: number; order_date: string; expected_arrival: string | null
+    status: string; notes: string | null; created_at: string
+  }[]
+  if (loose.length > 0) {
+    const insertOrder = db.prepare('INSERT INTO orders (supplier_id, order_date, expected_arrival, status, notes, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+    const link = db.prepare('UPDATE purchase_orders SET order_id = ? WHERE id = ?')
+    db.transaction(() => {
+      for (const po of loose) {
+        const r = insertOrder.run(po.supplier_id, po.order_date, po.expected_arrival, po.status, po.notes, po.created_at)
+        link.run(r.lastInsertRowid, po.id)
+      }
+    })()
+  }
+
+  // AI settings per function: old event-lookup max tokens (was never applied; web search needs ≥1024)
+  const oldMax = db.prepare("SELECT value FROM settings WHERE key = 'ai_max_tokens_per_lookup'").get() as { value: string } | undefined
+  if (oldMax) {
+    const value = Math.max(1024, parseInt(oldMax.value, 10) || 0)
+    db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('ai_max_tokens_event_lookup', ?)").run(String(value))
+    db.prepare("DELETE FROM settings WHERE key = 'ai_max_tokens_per_lookup'").run()
+  }
+  // All usage so far came from the event lookup
+  const hasFnUsage = db.prepare("SELECT 1 FROM settings WHERE key = 'ai_tokens_event_lookup_input'").get()
+  if (!hasFnUsage) {
+    db.prepare(`INSERT INTO settings (key, value)
+      SELECT 'ai_tokens_event_lookup_input', value FROM settings WHERE key = 'ai_total_input_tokens'`).run()
+    db.prepare(`INSERT INTO settings (key, value)
+      SELECT 'ai_tokens_event_lookup_output', value FROM settings WHERE key = 'ai_total_output_tokens'`).run()
   }
 }
