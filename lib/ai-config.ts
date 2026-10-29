@@ -17,7 +17,8 @@ export const FALLBACK_MODELS = [
   { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5' },
 ]
 
-export const MAX_TOKENS_LIMIT = 32000
+// The Anthropic SDK refuses non-streaming calls above ~21k max_tokens
+export const MAX_TOKENS_LIMIT = 16000
 
 export const modelSettingKey = (fn: AiFunction) => `ai_model_${fn}`
 export const maxTokensSettingKey = (fn: AiFunction) => `ai_max_tokens_${fn}`

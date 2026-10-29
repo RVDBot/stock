@@ -19,7 +19,7 @@ describe('getAiConfig', () => {
   it('leest instellingen en begrenst max tokens', () => {
     set('ai_model_order_import', 'claude-opus-5-5')
     set('ai_max_tokens_order_import', '999999')
-    expect(getAiConfig(db, 'order_import')).toEqual({ model: 'claude-opus-5-5', maxTokens: 32000 })
+    expect(getAiConfig(db, 'order_import')).toEqual({ model: 'claude-opus-5-5', maxTokens: 16000 })
     set('ai_max_tokens_order_import', '0')
     expect(getAiConfig(db, 'order_import').maxTokens).toBe(4096)
   })

@@ -153,3 +153,11 @@ export async function analyzeOrderDocument(opts: {
     usage: { input: message.usage.input_tokens, output: message.usage.output_tokens },
   }
 }
+
+export function validateImportFile(type: string, size: number): string | null {
+  if (!ALLOWED_IMPORT_TYPES.has(type)) return 'Alleen png, jpg, webp of pdf'
+  if (size === 0) return 'Bestand is leeg'
+  if (size > MAX_IMPORT_BYTES) return 'Bestand is te groot (max 10 MB)'
+  if (type !== 'application/pdf' && size > MAX_IMAGE_BYTES) return 'Afbeelding is te groot (max 5 MB)'
+  return null
+}

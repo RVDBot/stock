@@ -3,6 +3,9 @@ import type { NextConfig } from 'next'
 const nextConfig: NextConfig = {
   output: 'standalone',
   serverExternalPackages: ['better-sqlite3'],
+  experimental: {
+    middlewareClientMaxBodySize: '12mb',
+  },
   async headers() {
     return [{
       source: '/(.*)',
