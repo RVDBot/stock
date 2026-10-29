@@ -28,6 +28,7 @@ const TOOL_NAME = 'register_order'
 const EXTRACT_TOOL: Anthropic.Tool = {
   name: TOOL_NAME,
   description: 'Registreer de bestelling zoals die in het document staat.',
+  strict: true,
   input_schema: {
     type: 'object',
     properties: {
@@ -45,10 +46,12 @@ const EXTRACT_TOOL: Anthropic.Tool = {
             confidence: { type: 'string', enum: ['high', 'low'], description: 'high alleen als naam én kleur/variant duidelijk overeenkomen' },
           },
           required: ['supplier_code', 'supplier_description', 'quantity', 'product_id', 'confidence'],
+          additionalProperties: false,
         },
       },
     },
     required: ['order_date', 'supplier_ref', 'lines'],
+    additionalProperties: false,
   },
 }
 
@@ -59,6 +62,7 @@ export function buildImportPrompt(products: ImportProduct[], aliases: AliasRow[]
     : '(nog geen)'
   return `Dit document is een bestelling, orderbevestiging, proforma of factuur van een fabrikant.
 Haal elke bestelde productregel eruit en registreer de bestelling met de tool ${TOOL_NAME}.
+Gebruik altijd de tool ${TOOL_NAME} om de bestelling te registreren; antwoord niet met gewone tekst.
 
 De fabrikant gebruikt eigen artikelcodes. Koppel elke regel aan een product uit onderstaande lijst op basis van productnaam en kleur/variant (bijv. lengte, maat).
 - Kies alleen een id uit de lijst; verzin nooit een id.
@@ -139,12 +143,13 @@ export async function analyzeOrderDocument(opts: {
     model: opts.model,
     max_tokens: opts.maxTokens,
     tools: [EXTRACT_TOOL],
-    tool_choice: { type: 'tool', name: TOOL_NAME },
     messages: [{
       role: 'user',
       content: [documentBlock, { type: 'text', text: buildImportPrompt(opts.products, opts.aliases) }],
     }],
   })
+
+  if (message.stop_reason === 'refusal') throw new Error('Claude weigerde het document te verwerken')
 
   const toolUse = message.content.find(b => b.type === 'tool_use')
   return {

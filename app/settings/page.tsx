@@ -212,7 +212,7 @@ export default function SettingsPage() {
           ai_token_cap: aiTokenCap,
           ...Object.fromEntries(AI_FUNCTION_KEYS.flatMap(fn => [
             [modelSettingKey(fn), aiConfig[fn].model],
-            [maxTokensSettingKey(fn), String(Math.min(MAX_TOKENS_LIMIT, Math.max(1, parseInt(aiConfig[fn].maxTokens, 10) || AI_FUNCTIONS[fn].defaultMaxTokens)))],
+            [maxTokensSettingKey(fn), String(Math.min(MAX_TOKENS_LIMIT, Math.max(fn === 'event_lookup' ? 1024 : 1, parseInt(aiConfig[fn].maxTokens, 10) || AI_FUNCTIONS[fn].defaultMaxTokens)))],
           ])),
         } }),
       })
@@ -473,7 +473,7 @@ export default function SettingsPage() {
                         type="number"
                         className={inputClass}
                         value={current.maxTokens}
-                        min="1"
+                        min={fn === 'event_lookup' ? 1024 : 1}
                         max={MAX_TOKENS_LIMIT}
                         onChange={e => setAiConfig(prev => ({ ...prev, [fn]: { ...prev[fn], maxTokens: e.target.value } }))}
                       />

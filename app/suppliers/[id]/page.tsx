@@ -1113,8 +1113,8 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
                             )}
                             {!bulkMode && productOrders.length > 0 && (
                               <div className="mt-1 ml-8 space-y-0.5">
-                                {productOrders.map(o => (
-                                  <p key={o.id} className="text-[11px] text-text-tertiary">
+                                {productOrders.map((o, idx) => (
+                                  <p key={`${o.id}-${idx}`} className="text-[11px] text-text-tertiary">
                                     Bestelling #{o.id}: {formatNumber(o.quantity)} stuks
                                     {o.expected_arrival && ` — verwacht ${new Date(o.expected_arrival).toLocaleDateString('nl-NL')}`}
                                     <span className={`ml-1 ${o.status === 'shipped' ? 'text-warning' : 'text-accent'}`}>

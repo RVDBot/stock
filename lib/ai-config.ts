@@ -4,7 +4,7 @@ export type AiFunction = 'event_lookup' | 'order_import'
 
 export const AI_FUNCTIONS: Record<AiFunction, { label: string; defaultModel: string; defaultMaxTokens: number }> = {
   event_lookup: { label: 'Datum opzoeken (events)', defaultModel: 'claude-haiku-4-5-20251001', defaultMaxTokens: 1024 },
-  order_import: { label: 'Bestelling uit document', defaultModel: 'claude-sonnet-5-5', defaultMaxTokens: 4096 },
+  order_import: { label: 'Bestelling uit document', defaultModel: 'claude-sonnet-5-5', defaultMaxTokens: 16000 },
 }
 
 export const AI_FUNCTION_KEYS = Object.keys(AI_FUNCTIONS) as AiFunction[]

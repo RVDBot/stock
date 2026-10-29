@@ -54,5 +54,6 @@ describe('buildImportPrompt', () => {
     const p = buildImportPrompt([{ id: 10, sku: 'SKU-A', name: 'Rope A Black' }], [{ supplier_code: 'X1', supplier_description: 'Rope blk', product_id: 10 }])
     expect(p).toContain('10 | SKU-A | Rope A Black')
     expect(p).toContain('X1')
+    expect(p).toContain('Gebruik altijd de tool')
   })
 })

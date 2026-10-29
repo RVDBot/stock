@@ -126,7 +126,9 @@ WHERE po.product_id = ? AND o.status IN ('ordered', 'shipped')
    (id, SKU, naam) en de bekende aliases. Gestructureerde output via een tool met JSON-schema
    (`order_date`, `supplier_ref`, `lines[]` met code, omschrijving, aantal, `product_id|null`,
    `confidence: high|low`). Instructie: koppel op naam en kleur/variant, kies `null` bij twijfel
-   tussen meerdere producten, verzin geen product_ids.
+   tussen meerdere producten, verzin geen product_ids. Een geforceerde `tool_choice` wordt niet
+   gebruikt (niet ondersteund op Sonnet 5.5 / Opus 5.5); in plaats daarvan een strict tool plus een
+   promptinstructie om de tool te gebruiken.
 3. Server-side nabewerking:
    - `product_id` dat niet in de productlijst van de leverancier zit → `null`.
    - Alias-match op genormaliseerde code (of omschrijving bij geen code) wint altijd → `memory`.
@@ -172,7 +174,7 @@ Blok "Per functie" onder Claude AI:
 | Functie | settings-keys | standaard |
 |---|---|---|
 | Datum opzoeken (events) | `ai_model_event_lookup`, `ai_max_tokens_event_lookup` | `claude-haiku-4-5-20251001`, 1024 |
-| Bestelling uit document | `ai_model_order_import`, `ai_max_tokens_order_import` | `claude-sonnet-5-5`, 4096 |
+| Bestelling uit document | `ai_model_order_import`, `ai_max_tokens_order_import` | `claude-sonnet-5-5`, 16000 |
 
 - Modelkeuzelijst gevuld via `GET /api/ai/models`.
 - `ai_max_tokens_per_lookup` vervalt; bestaande waarde wordt `ai_max_tokens_event_lookup`

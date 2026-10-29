@@ -14,14 +14,14 @@ beforeEach(() => {
 describe('getAiConfig', () => {
   it('valt terug op de defaults', () => {
     expect(getAiConfig(db, 'event_lookup')).toEqual({ model: 'claude-haiku-4-5-20251001', maxTokens: 1024 })
-    expect(getAiConfig(db, 'order_import')).toEqual({ model: 'claude-sonnet-5-5', maxTokens: 4096 })
+    expect(getAiConfig(db, 'order_import')).toEqual({ model: 'claude-sonnet-5-5', maxTokens: 16000 })
   })
   it('leest instellingen en begrenst max tokens', () => {
     set('ai_model_order_import', 'claude-opus-5-5')
     set('ai_max_tokens_order_import', '999999')
     expect(getAiConfig(db, 'order_import')).toEqual({ model: 'claude-opus-5-5', maxTokens: 16000 })
     set('ai_max_tokens_order_import', '0')
-    expect(getAiConfig(db, 'order_import').maxTokens).toBe(4096)
+    expect(getAiConfig(db, 'order_import').maxTokens).toBe(16000)
   })
 })
 
