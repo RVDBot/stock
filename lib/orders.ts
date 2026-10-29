@@ -22,7 +22,7 @@ export function listOrders(db: Database.Database, supplierId: number, filter: 'o
   const linesStmt = db.prepare(`
     SELECT po.id, po.product_id, p.sku, p.name, po.quantity, po.supplier_code, po.supplier_description
     FROM purchase_orders po
-    JOIN products p ON p.id = po.product_id
+    LEFT JOIN products p ON p.id = po.product_id
     WHERE po.order_id = ?
     ORDER BY po.id
   `)
@@ -37,7 +37,7 @@ function insertLines(db: Database.Database, orderId: number, input: OrderInput) 
   `)
   for (const line of input.lines) {
     insert.run(orderId, input.supplier_id, line.product_id, line.quantity, input.order_date, line.supplier_code || null, line.supplier_description || null)
-    if (line.remember) upsertAlias(db, input.supplier_id, line.product_id, line.supplier_code, line.supplier_description)
+    if (line.remember && line.product_id !== null) upsertAlias(db, input.supplier_id, line.product_id, line.supplier_code, line.supplier_description)
   }
 }
 
@@ -100,12 +100,15 @@ export function validateOrderInput(body: unknown): { ok: true; value: OrderInput
   const lines: OrderLineInput[] = []
   for (const raw of b.lines) {
     const l = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
-    if (!isPositiveInt(l.product_id)) return { ok: false, error: 'Elke regel heeft een product nodig' }
+    const unassigned = l.product_id === null || l.product_id === undefined
+    if (!unassigned && !isPositiveInt(l.product_id)) return { ok: false, error: 'Elke regel heeft een product nodig' }
     if (!isPositiveInt(l.quantity) || l.quantity > 1_000_000) return { ok: false, error: 'Elke regel heeft een aantal van minimaal 1 nodig' }
     const code = optionalText(l.supplier_code, 200)
     const description = optionalText(l.supplier_description, 500)
     if (code === undefined || description === undefined) return { ok: false, error: 'Ongeldige regelgegevens' }
-    lines.push({ product_id: l.product_id, quantity: l.quantity, supplier_code: code, supplier_description: description, remember: l.remember === true })
+    // Without a product the description is the only way to know later what was ordered
+    if (unassigned && !code && !description) return { ok: false, error: 'Een regel zonder product heeft een omschrijving nodig' }
+    lines.push({ product_id: unassigned ? null : (l.product_id as number), quantity: l.quantity, supplier_code: code, supplier_description: description, remember: l.remember === true })
   }
   return {
     ok: true,

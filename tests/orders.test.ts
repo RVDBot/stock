@@ -72,4 +72,35 @@ describe('validateOrderInput', () => {
     expect(validateOrderInput({ ...ok, order_date: '1-10-2026' }).ok).toBe(false)
     expect(validateOrderInput(null).ok).toBe(false)
   })
+  it('accepteert een regel zonder product mits er een omschrijving of code is', () => {
+    const r = validateOrderInput({ ...ok, lines: [{ product_id: null, quantity: 4, supplier_description: 'Nieuw touw 3m' }] })
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.value.lines[0]).toMatchObject({ product_id: null, quantity: 4, supplier_description: 'Nieuw touw 3m', remember: false })
+    expect(validateOrderInput({ ...ok, lines: [{ product_id: null, quantity: 4, supplier_code: 'NX-1' }] }).ok).toBe(true)
+    const bad = validateOrderInput({ ...ok, lines: [{ product_id: null, quantity: 4 }] })
+    expect(bad).toEqual({ ok: false, error: 'Een regel zonder product heeft een omschrijving nodig' })
+  })
 })
+
+describe('regels zonder product', () => {
+  it('worden opgeslagen, getoond en tellen niet mee als onderweg, en worden niet onthouden', () => {
+    const id = createOrder(db, { ...base, lines: [
+      { product_id: 10, quantity: 5 },
+      { product_id: null, quantity: 8, supplier_code: 'NX-1', supplier_description: 'Nieuw touw', remember: true },
+    ] })
+    const [order] = listOrders(db, 1, 'all')
+    expect(order.id).toBe(id)
+    expect(order.lines.map(l => [l.product_id, l.sku, l.quantity])).toEqual([[10, 'SKU-A', 5], [null, null, 8]])
+    expect(getPendingOrders(db, 10).reduce((s, o) => s + o.quantity, 0)).toBe(5)
+    expect(getAliasMap(db, 1).has('nx1')).toBe(false)
+
+    // Assigning later via an update counts it as pending and remembers the code
+    updateOrder(db, id, { ...base, lines: [
+      { product_id: 10, quantity: 5 },
+      { product_id: 11, quantity: 8, supplier_code: 'NX-1', supplier_description: 'Nieuw touw', remember: true },
+    ] })
+    expect(getPendingOrders(db, 11).reduce((s, o) => s + o.quantity, 0)).toBe(8)
+    expect(getAliasMap(db, 1).get('nx1')).toBe(11)
+  })
+})
+

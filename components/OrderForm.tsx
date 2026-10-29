@@ -9,12 +9,13 @@ interface ProductOption { productId: number; sku: string; name: string }
 
 interface LineState {
   key: string
-  product_id: number | ''
+  product_id: number | '' | 'later' // 'later' = product not in WooCommerce yet, assign afterwards
   quantity: string
   supplier_code: string | null
   supplier_description: string | null
   match: MatchKind | null // null = added by hand
   suggested_product_id: number | null
+  manualDescription: boolean // no supplier text from a document, so the user types it when assigning later
 }
 
 interface Props {
@@ -37,7 +38,7 @@ let keySeq = 0
 const newKey = () => `l${++keySeq}`
 
 function emptyLine(): LineState {
-  return { key: newKey(), product_id: '', quantity: '', supplier_code: null, supplier_description: null, match: null, suggested_product_id: null }
+  return { key: newKey(), product_id: '', quantity: '', supplier_code: null, supplier_description: null, match: null, suggested_product_id: null, manualDescription: true }
 }
 
 const inputClass = 'w-full text-[13px] px-3 py-2 rounded-lg bg-surface-0 border border-border-subtle text-text-primary'
@@ -50,7 +51,7 @@ export default function OrderForm({ supplierId, products, order, onSaved, onCanc
   const [arrival, setArrival] = useState(order?.expected_arrival || '')
   const [notes, setNotes] = useState(order?.notes || '')
   const [lines, setLines] = useState<LineState[]>(() => order
-    ? order.lines.map(l => ({ key: newKey(), product_id: l.product_id, quantity: String(l.quantity), supplier_code: l.supplier_code, supplier_description: l.supplier_description, match: null, suggested_product_id: l.product_id }))
+    ? order.lines.map(l => ({ key: newKey(), product_id: l.product_id ?? 'later', quantity: String(l.quantity), supplier_code: l.supplier_code, supplier_description: l.supplier_description, match: null, suggested_product_id: l.product_id, manualDescription: !l.supplier_code }))
     : [emptyLine()])
   const [analyzing, setAnalyzing] = useState(false)
   const [message, setMessage] = useState<{ kind: 'error' | 'warn' | 'info'; text: string } | null>(null)
@@ -89,6 +90,7 @@ export default function OrderForm({ supplierId, products, order, onSaved, onCanc
         supplier_description: l.supplier_description,
         match: l.match,
         suggested_product_id: l.product_id,
+        manualDescription: false,
       })))
       const open = result.lines.filter(l => l.match === 'none' || l.match === 'uncertain').length
       if (result.truncated) {
@@ -123,7 +125,9 @@ export default function OrderForm({ supplierId, products, order, onSaved, onCanc
     setLines(prev => prev.map(l => (l.key === key ? { ...l, ...patch } : l)))
   }
 
-  const canSave = lines.length > 0 && lines.every(l => l.product_id !== '' && parseInt(l.quantity, 10) >= 1) && !saving && !analyzing
+  const lineComplete = (l: LineState) => parseInt(l.quantity, 10) >= 1 &&
+    (typeof l.product_id === 'number' || (l.product_id === 'later' && !!(l.supplier_code || l.supplier_description?.trim())))
+  const canSave = lines.length > 0 && lines.every(lineComplete) && !saving && !analyzing
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
@@ -139,12 +143,12 @@ export default function OrderForm({ supplierId, products, order, onSaved, onCanc
         expected_arrival: arrival,
         notes,
         lines: lines.map(l => ({
-          product_id: l.product_id,
+          product_id: typeof l.product_id === 'number' ? l.product_id : null,
           quantity: parseInt(l.quantity, 10),
           supplier_code: l.supplier_code,
           supplier_description: l.supplier_description,
           // Remember when the user picked or changed the product for a supplier line
-          remember: !!(l.supplier_code || l.supplier_description) && l.product_id !== l.suggested_product_id,
+          remember: typeof l.product_id === 'number' && !!(l.supplier_code || l.supplier_description) && l.product_id !== l.suggested_product_id,
         })),
       }
       const res = await apiFetch('/api/orders', {
@@ -221,8 +225,9 @@ export default function OrderForm({ supplierId, products, order, onSaved, onCanc
 
         <div className="space-y-2 mb-3">
           {lines.map(l => {
-            const style = l.match ? MATCH_STYLES[l.match] : null
-            const changed = l.match && l.product_id !== '' && l.product_id !== l.suggested_product_id
+            const later = l.product_id === 'later'
+            const style = later ? { dot: 'bg-warning', label: 'Later toewijzen' } : l.match ? MATCH_STYLES[l.match] : null
+            const changed = !later && l.match && l.product_id !== '' && l.product_id !== l.suggested_product_id
             return (
               <div key={l.key} className="flex flex-wrap items-center gap-2 bg-surface-0 rounded-xl border border-border-subtle px-3 py-2">
                 {style && (
@@ -231,7 +236,15 @@ export default function OrderForm({ supplierId, products, order, onSaved, onCanc
                     <span className="text-[11px] text-text-tertiary">{changed ? 'Aangepast' : style.label}</span>
                   </span>
                 )}
-                {(l.supplier_code || l.supplier_description) && (
+                {later && l.manualDescription ? (
+                  <input
+                    type="text"
+                    value={l.supplier_description ?? ''}
+                    onChange={e => updateLine(l.key, { supplier_description: e.target.value })}
+                    className={`${inputClass} flex-1 basis-48 ${l.supplier_description?.trim() ? '' : 'border-danger/50'}`}
+                    placeholder="Omschrijving (bijv. Speed Rope PRO 3m groen)"
+                  />
+                ) : (l.supplier_code || l.supplier_description) && (
                   <span className="text-[12px] text-text-secondary min-w-0 flex-1 basis-48 truncate" title={`${l.supplier_code ?? ''} ${l.supplier_description ?? ''}`}>
                     {l.supplier_code && <span className="font-mono text-text-tertiary mr-1.5">{l.supplier_code}</span>}
                     {l.supplier_description}
@@ -239,10 +252,14 @@ export default function OrderForm({ supplierId, products, order, onSaved, onCanc
                 )}
                 <select
                   value={l.product_id}
-                  onChange={e => updateLine(l.key, { product_id: e.target.value ? parseInt(e.target.value, 10) : '' })}
+                  onChange={e => {
+                    const v = e.target.value
+                    updateLine(l.key, { product_id: v === '' || v === 'later' ? v : parseInt(v, 10) })
+                  }}
                   className={`${inputClass} flex-1 basis-56 ${l.product_id === '' ? 'border-danger/50' : ''}`}
                 >
                   <option value="">Selecteer product...</option>
+                  <option value="later">Later toewijzen (nog niet in WooCommerce)</option>
                   {sortedProducts.map(p => (
                     <option key={p.productId} value={p.productId}>{p.sku} — {p.name}</option>
                   ))}

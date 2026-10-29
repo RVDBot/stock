@@ -12,9 +12,9 @@ export type MatchKind = 'memory' | 'confident' | 'uncertain' | 'none'
 
 export interface OrderLine {
   id: number
-  product_id: number
-  sku: string
-  name: string
+  product_id: number | null // null = nog niet toegewezen (product bestaat nog niet in WooCommerce)
+  sku: string | null
+  name: string | null
   quantity: number
   supplier_code: string | null
   supplier_description: string | null
@@ -33,7 +33,7 @@ export interface Order {
 }
 
 export interface OrderLineInput {
-  product_id: number
+  product_id: number | null
   quantity: number
   supplier_code?: string | null
   supplier_description?: string | null

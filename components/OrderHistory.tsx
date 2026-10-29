@@ -81,6 +81,7 @@ export default function OrderHistory({ orders, onEdit, onChanged }: Props) {
         <div className="space-y-2">
           {visible.map((o, i) => {
             const totalQty = o.lines.reduce((s, l) => s + l.quantity, 0)
+            const unassigned = o.lines.filter(l => l.product_id === null).length
             const isOpen = expanded.has(o.id)
             return (
               <div
@@ -96,6 +97,11 @@ export default function OrderHistory({ orders, onEdit, onChanged }: Props) {
                         #{o.id}{o.supplier_ref && ` — ${o.supplier_ref}`}
                       </span>
                       <span className={`text-[11px] font-semibold ${STATUS_COLORS[o.status]}`}>{ORDER_STATUS_LABELS[o.status]}</span>
+                      {unassigned > 0 && (
+                        <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-warning/10 text-warning border border-warning/20">
+                          {unassigned} {unassigned === 1 ? 'regel' : 'regels'} nog toewijzen
+                        </span>
+                      )}
                     </div>
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-text-secondary ml-4">
                       <span>Besteld: {formatDate(o.order_date)}</span>
@@ -125,7 +131,9 @@ export default function OrderHistory({ orders, onEdit, onChanged }: Props) {
                   <div className="mt-3 ml-4 space-y-1">
                     {o.lines.map(l => (
                       <div key={l.id} className="flex flex-wrap items-center gap-x-3 text-[12px]">
-                        <span className="text-text-primary">{l.sku} — {l.name}</span>
+                        {l.product_id === null
+                          ? <span className="text-warning font-medium">Nog niet toegewezen</span>
+                          : <span className="text-text-primary">{l.sku} — {l.name}</span>}
                         <span className="text-text-secondary tabular-nums">{l.quantity.toLocaleString('nl-NL')} stuks</span>
                         {(l.supplier_code || l.supplier_description) && (
                           <span className="text-text-tertiary">({[l.supplier_code, l.supplier_description].filter(Boolean).join(' · ')})</span>

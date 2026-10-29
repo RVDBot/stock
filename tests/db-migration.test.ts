@@ -57,3 +57,48 @@ describe('orders migration', () => {
     expect(get('ai_tokens_event_lookup_output')).toBe('70')
   })
 })
+
+describe('orderregels zonder product', () => {
+  it('maakt product_id optioneel in een bestaande 0.4.0-database zonder data te verliezen', () => {
+    const db = freshDb()
+    // Recreate purchase_orders exactly as 0.4.0 left it in production: product_id NOT NULL
+    db.pragma('foreign_keys = OFF')
+    db.exec(`DROP TABLE purchase_orders;
+      CREATE TABLE purchase_orders (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        supplier_id      INTEGER NOT NULL REFERENCES suppliers(id),
+        product_id       INTEGER NOT NULL REFERENCES products(id),
+        quantity         INTEGER NOT NULL,
+        order_date       TEXT NOT NULL,
+        expected_arrival TEXT,
+        status           TEXT NOT NULL DEFAULT 'ordered',
+        notes            TEXT,
+        created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+        supplier_code TEXT,
+        supplier_description TEXT
+      )`)
+    db.pragma('foreign_keys = ON')
+    const orderId = Number(db.prepare("INSERT INTO orders (supplier_id, order_date, supplier_ref) VALUES (1, '2026-10-01', 'PI-1')").run().lastInsertRowid)
+    db.prepare(`INSERT INTO purchase_orders (order_id, supplier_id, product_id, quantity, order_date, supplier_code)
+      VALUES (?, 1, 10, 50, '2026-10-01', 'A1'), (?, 1, 11, 20, '2026-10-01', NULL)`).run(orderId, orderId)
+
+    initSchema(db)
+    initSchema(db)
+
+    const col = (db.prepare('PRAGMA table_info(purchase_orders)').all() as { name: string; notnull: number }[]).find(c => c.name === 'product_id')
+    expect(col?.notnull).toBe(0)
+    const rows = db.prepare('SELECT product_id, quantity, order_id, supplier_code FROM purchase_orders ORDER BY id').all()
+    expect(rows).toEqual([
+      { product_id: 10, quantity: 50, order_id: orderId, supplier_code: 'A1' },
+      { product_id: 11, quantity: 20, order_id: orderId, supplier_code: null },
+    ])
+    expect(db.prepare('SELECT COUNT(*) n FROM orders').get()).toEqual({ n: 1 })
+    expect(db.pragma('foreign_key_check')).toEqual([])
+    expect(db.pragma('foreign_keys', { simple: true })).toBe(1)
+    db.prepare("INSERT INTO purchase_orders (order_id, supplier_id, product_id, quantity, order_date) VALUES (?, 1, NULL, 5, '2026-10-01')").run(orderId)
+    // ON DELETE CASCADE from orders survives the rebuild
+    db.prepare('DELETE FROM orders WHERE id = ?').run(orderId)
+    expect(db.prepare('SELECT COUNT(*) n FROM purchase_orders').get()).toEqual({ n: 0 })
+  })
+})

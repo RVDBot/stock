@@ -79,7 +79,7 @@ export function initSchema(db: Database.Database) {
     CREATE TABLE IF NOT EXISTS purchase_orders (
       id               INTEGER PRIMARY KEY AUTOINCREMENT,
       supplier_id      INTEGER NOT NULL REFERENCES suppliers(id),
-      product_id       INTEGER NOT NULL REFERENCES products(id),
+      product_id       INTEGER REFERENCES products(id),
       quantity         INTEGER NOT NULL,
       order_date       TEXT NOT NULL,
       expected_arrival TEXT,
@@ -207,6 +207,41 @@ export function initSchema(db: Database.Database) {
       ALTER TABLE purchase_orders ADD COLUMN supplier_code TEXT;
       ALTER TABLE purchase_orders ADD COLUMN supplier_description TEXT;
     `)
+  }
+
+  // Order lines may be unassigned (product not in WooCommerce yet). SQLite can't drop NOT NULL
+  // in place, so rebuild the table once for databases created before that.
+  const productCol = (db.prepare("PRAGMA table_info(purchase_orders)").all() as { name: string; notnull: number }[])
+    .find(c => c.name === 'product_id')
+  if (productCol?.notnull) {
+    const fkWasOn = db.pragma('foreign_keys', { simple: true }) === 1
+    db.pragma('foreign_keys = OFF')
+    try {
+      db.transaction(() => {
+        db.exec(`
+          CREATE TABLE purchase_orders_new (
+            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+            supplier_id          INTEGER NOT NULL REFERENCES suppliers(id),
+            product_id           INTEGER REFERENCES products(id),
+            quantity             INTEGER NOT NULL,
+            order_date           TEXT NOT NULL,
+            expected_arrival     TEXT,
+            status               TEXT NOT NULL DEFAULT 'ordered',
+            notes                TEXT,
+            created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            order_id             INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+            supplier_code        TEXT,
+            supplier_description TEXT
+          );
+          INSERT INTO purchase_orders_new (id, supplier_id, product_id, quantity, order_date, expected_arrival, status, notes, created_at, order_id, supplier_code, supplier_description)
+            SELECT id, supplier_id, product_id, quantity, order_date, expected_arrival, status, notes, created_at, order_id, supplier_code, supplier_description FROM purchase_orders;
+          DROP TABLE purchase_orders;
+          ALTER TABLE purchase_orders_new RENAME TO purchase_orders;
+        `)
+      })()
+    } finally {
+      if (fkWasOn) db.pragma('foreign_keys = ON')
+    }
   }
 
   // Each legacy single-product order becomes an order with one line
