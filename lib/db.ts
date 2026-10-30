@@ -156,6 +156,17 @@ export function initSchema(db: Database.Database) {
   if (!productColNames.has('archived')) {
     db.exec(`ALTER TABLE products ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;`)
   }
+  // Product sheet data: barcode etc. for fulfilment mails, costs for ads, HS code for export
+  if (!productColNames.has('barcode')) {
+    db.exec(`
+      ALTER TABLE products ADD COLUMN barcode TEXT;
+      ALTER TABLE products ADD COLUMN variant TEXT;
+      ALTER TABLE products ADD COLUMN cogm REAL;
+      ALTER TABLE products ADD COLUMN cogs REAL;
+      ALTER TABLE products ADD COLUMN country_of_origin TEXT;
+      ALTER TABLE products ADD COLUMN hs_code TEXT;
+    `)
+  }
 
   // Supplier order_cycle_days migration
   if (!colNames.has('order_cycle_days')) {

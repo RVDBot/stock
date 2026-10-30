@@ -33,7 +33,24 @@ interface Product {
   template_name: string | null
   template_fields: string | null
   specs: string
+  barcode: string | null
+  variant: string | null
+  cogm: number | null
+  cogs: number | null
+  country_of_origin: string | null
+  hs_code: string | null
 }
+
+const DATA_FIELDS = [
+  { key: 'barcode', label: 'Barcode' },
+  { key: 'variant', label: 'Variant' },
+  { key: 'hs_code', label: 'HS-code' },
+  { key: 'country_of_origin', label: 'Land van herkomst' },
+  { key: 'cogm', label: 'COGM (€)' },
+  { key: 'cogs', label: 'COGS (€)' },
+] as const
+
+type DataKey = typeof DATA_FIELDS[number]['key']
 
 function formatNumber(n: number): string {
   return n.toLocaleString('nl-NL')
@@ -53,6 +70,9 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
 
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null)
   const [specs, setSpecs] = useState<Record<string, string>>({})
+  const [productData, setProductData] = useState<Record<DataKey, string>>({ barcode: '', variant: '', hs_code: '', country_of_origin: '', cogm: '', cogs: '' })
+  const [dataSaving, setDataSaving] = useState(false)
+  const [dataMsg, setDataMsg] = useState('')
 
   function loadData() {
     setLoading(true)
@@ -66,6 +86,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
         const p = productData as Product
         setProduct(p)
         setSelectedTemplateId(p.spec_template_id)
+        setProductData(Object.fromEntries(DATA_FIELDS.map(f => [f.key, p[f.key]?.toString() ?? ''])) as Record<DataKey, string>)
         try {
           setSpecs(JSON.parse(p.specs || '{}'))
         } catch {
@@ -137,6 +158,22 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
       loadData()
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function saveProductData() {
+    setDataSaving(true)
+    setDataMsg('')
+    try {
+      const res = await apiFetch('/api/products', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: parseInt(id, 10), product_data: productData }),
+      })
+      const data = await res.json()
+      setDataMsg(data.error || 'Opgeslagen')
+    } finally {
+      setDataSaving(false)
     }
   }
 
@@ -212,6 +249,33 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                     {product.supplier_name}
                   </a>
                 )}
+              </div>
+            </div>
+
+            {/* Product data */}
+            <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5">
+              <h2 className="text-[14px] font-semibold text-text-primary mb-4">Productgegevens</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                {DATA_FIELDS.map(f => (
+                  <div key={f.key}>
+                    <label className="text-[11px] text-text-tertiary font-semibold uppercase tracking-wider block mb-1">{f.label}</label>
+                    <input
+                      value={productData[f.key]}
+                      onChange={e => setProductData(prev => ({ ...prev, [f.key]: e.target.value }))}
+                      className={inputClass}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={saveProductData}
+                  disabled={dataSaving}
+                  className="text-[12px] font-medium px-4 py-2 rounded-lg bg-accent text-white hover:bg-accent-hover disabled:opacity-40 transition-all duration-150"
+                >
+                  {dataSaving ? 'Opslaan...' : 'Opslaan'}
+                </button>
+                {dataMsg && <span className={`text-[12px] ${dataMsg === 'Opgeslagen' ? 'text-success' : 'text-danger'}`}>{dataMsg}</span>}
               </div>
             </div>
 

@@ -139,6 +139,13 @@ export async function syncProducts() {
           db.prepare('DELETE FROM sales_history WHERE product_id = ?').run(oldId)
           db.prepare('UPDATE purchase_orders SET product_id = ? WHERE product_id = ?').run(keepId, oldId)
           db.prepare('UPDATE supplier_product_aliases SET product_id = ? WHERE product_id = ?').run(keepId, oldId)
+          db.prepare(`
+            UPDATE products SET
+              barcode = COALESCE(products.barcode, o.barcode), variant = COALESCE(products.variant, o.variant), cogm = COALESCE(products.cogm, o.cogm),
+              cogs = COALESCE(products.cogs, o.cogs), country_of_origin = COALESCE(products.country_of_origin, o.country_of_origin), hs_code = COALESCE(products.hs_code, o.hs_code)
+            FROM (SELECT * FROM products WHERE id = ?) AS o
+            WHERE products.id = ?
+          `).run(oldId, keepId)
           db.prepare('DELETE FROM products WHERE id = ?').run(oldId)
           log('info', `Product ${oldId} (sku=${p.sku}) samengevoegd met ${keepId} (woo_id=${p.id})`)
         }

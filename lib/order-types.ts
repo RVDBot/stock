@@ -63,3 +63,21 @@ export interface ImportResult {
   lines: ImportedLine[]
   truncated: boolean
 }
+
+export interface FulfilmentMailLine {
+  sku: string | null
+  name: string
+  variant: string | null
+  barcode: string | null
+  hs_code: string | null
+  country_of_origin: string | null
+  quantity: number
+  is_new: boolean
+}
+
+export interface FulfilmentMail {
+  subject: string
+  html: string
+  text: string
+  missing_barcodes: string[]
+}

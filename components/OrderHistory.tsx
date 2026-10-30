@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { apiFetch } from '@/lib/api'
+import FulfilmentMailDialog from '@/components/FulfilmentMailDialog'
 import { ORDER_STATUSES, ORDER_STATUS_LABELS, type Order, type OrderStatus } from '@/lib/order-types'
 
 interface Props {
@@ -22,6 +23,7 @@ const btn = 'text-[12px] font-medium px-3 py-1.5 rounded-lg bg-surface-2 border 
 export default function OrderHistory({ orders, onEdit, onChanged }: Props) {
   const [filter, setFilter] = useState<'open' | 'all'>('open')
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
+  const [mailOrderId, setMailOrderId] = useState<number | null>(null)
   const visible = filter === 'open' ? orders.filter(o => o.status !== 'received') : orders
 
   function toggle(id: number) {
@@ -54,6 +56,7 @@ export default function OrderHistory({ orders, onEdit, onChanged }: Props) {
 
   return (
     <div>
+      {mailOrderId !== null && <FulfilmentMailDialog orderId={mailOrderId} onClose={() => setMailOrderId(null)} />}
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-[14px] font-semibold text-text-primary">Bestellingen ({visible.length})</h2>
         <div className="flex gap-1">
@@ -118,6 +121,7 @@ export default function OrderHistory({ orders, onEdit, onChanged }: Props) {
                     >
                       {ORDER_STATUSES.map(s => <option key={s} value={s}>{ORDER_STATUS_LABELS[s]}</option>)}
                     </select>
+                    <button onClick={() => setMailOrderId(o.id)} className={btn}>Mail fulfilment</button>
                     <button onClick={() => onEdit(o)} className={btn}>Bewerken</button>
                     <button
                       onClick={() => remove(o)}

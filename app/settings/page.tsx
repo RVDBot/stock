@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Nav from '@/components/Nav'
 import { apiFetch } from '@/lib/api'
+import type { ImportDataResult } from '@/lib/product-data'
 import { AI_FUNCTIONS, AI_FUNCTION_KEYS, FALLBACK_MODELS, MAX_TOKENS_LIMIT, modelSettingKey, maxTokensSettingKey, usageSettingKey, type AiFunction } from '@/lib/ai-config'
 
 export default function SettingsPage() {
@@ -60,6 +61,9 @@ export default function SettingsPage() {
   // Sync
   const [historicalSyncing, setHistoricalSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [importError, setImportError] = useState('')
+  const [importResult, setImportResult] = useState<ImportDataResult | null>(null)
 
   function loadData() {
     setLoading(true)
@@ -244,6 +248,26 @@ export default function SettingsPage() {
       setSyncMsg('Verbinding mislukt')
     } finally {
       setSyncing(false)
+    }
+  }
+
+  async function importProductSheet(file: File) {
+    setImporting(true)
+    setImportError('')
+    setImportResult(null)
+    try {
+      const res = await apiFetch('/api/products/import-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csv: await file.text() }),
+      })
+      const data = await res.json()
+      if (data.error) setImportError(data.error)
+      else setImportResult(data)
+    } catch {
+      setImportError('Importeren mislukt')
+    } finally {
+      setImporting(false)
     }
   }
 
@@ -591,6 +615,42 @@ export default function SettingsPage() {
                     {pwMsg && <span className="text-success text-[12px]">{pwMsg}</span>}
                     {pwError && <span className="text-danger text-[12px]">{pwError}</span>}
                   </div>
+                </div>
+              )}
+            </div>
+
+            {/* Product data import */}
+            <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5">
+              <h2 className="text-[14px] font-semibold text-text-primary mb-1">Productgegevens importeren</h2>
+              <p className="text-text-secondary text-[13px] mb-3">
+                CSV met SKU, varianten, barcode, COGM, COGS, land van herkomst en HS-code. Alleen producten die in het dashboard staan worden bijgewerkt.
+              </p>
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                disabled={importing}
+                onChange={e => {
+                  const file = e.target.files?.[0]
+                  if (file) importProductSheet(file)
+                  e.target.value = ''
+                }}
+                className="text-[13px] text-text-secondary"
+              />
+              {importing && <p className="mt-2 text-[12px] text-text-tertiary">Importeren...</p>}
+              {importError && <p className="mt-2 text-[12px] text-danger">{importError}</p>}
+              {importResult && (
+                <div className="mt-3 text-[12px] text-text-secondary space-y-1">
+                  <p className="text-success">{importResult.updated} producten bijgewerkt</p>
+                  <p>{importResult.not_in_dashboard} regels overgeslagen (niet in dashboard), {importResult.discontinued} uitverkocht</p>
+                  {importResult.active_without_barcode.length > 0 && (
+                    <p className="text-warning">Actief zonder barcode: {importResult.active_without_barcode.join(', ')}</p>
+                  )}
+                  {importResult.duplicate_barcodes.length > 0 && (
+                    <div className="text-warning">
+                      <p>Dubbele barcodes:</p>
+                      {importResult.duplicate_barcodes.map(d => <p key={d.barcode}>{d.barcode}: {d.skus.join(', ')}</p>)}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

@@ -4,6 +4,7 @@ import { getDb } from '@/lib/db'
 import { getAllProductStatuses, getProductStatusesBySupplier } from '@/lib/stock-status'
 import { isPositiveInt, isIntArray, isInt } from '@/lib/validate'
 import { getUnpublishedProducts } from '@/lib/orders'
+import { updateProductData, validateProductData } from '@/lib/product-data'
 
 export async function GET(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
@@ -130,6 +131,13 @@ export async function PATCH(req: NextRequest) {
   // Single product update
   if (!isPositiveInt(body.id)) {
     return NextResponse.json({ error: 'Product id is verplicht' }, { status: 400 })
+  }
+
+  if (body.product_data !== undefined) {
+    const data = validateProductData(body.product_data)
+    if (!data) return NextResponse.json({ error: 'Ongeldige productgegevens' }, { status: 400 })
+    if (!updateProductData(db, body.id, data)) return NextResponse.json({ error: 'Product niet gevonden' }, { status: 404 })
+    return NextResponse.json({ success: true })
   }
 
   if (body.specs !== undefined || body.spec_template_id !== undefined) {
