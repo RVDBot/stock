@@ -5,6 +5,7 @@ import { log } from '@/lib/logger'
 import { isPositiveInt } from '@/lib/validate'
 import { getAiConfig, getClaudeApiKey, checkTokenCap, addTokenUsage, checkRateLimit } from '@/lib/ai'
 import { getAliases, getAliasMap } from '@/lib/aliases'
+import { getUnpublishedProducts } from '@/lib/orders'
 import { analyzeOrderDocument, resolveMatches, validateImportFile, type ImportProduct } from '@/lib/order-import'
 
 export async function POST(req: NextRequest) {
@@ -35,10 +36,12 @@ export async function POST(req: NextRequest) {
   const capError = checkTokenCap(db)
   if (capError) return NextResponse.json({ error: capError }, { status: 429 })
 
-  const products = db.prepare('SELECT id, sku, name FROM products WHERE supplier_id = ? AND active = 1 AND archived = 0 ORDER BY name')
-    .all(supplierId) as ImportProduct[]
+  const products = [
+    ...db.prepare('SELECT id, sku, name FROM products WHERE supplier_id = ? AND active = 1 AND archived = 0 ORDER BY name').all(supplierId) as ImportProduct[],
+    ...getUnpublishedProducts(db, supplierId),
+  ]
   if (products.length === 0) {
-    return NextResponse.json({ error: 'Deze leverancier heeft geen actieve producten' }, { status: 400 })
+    return NextResponse.json({ error: 'Deze leverancier heeft geen producten' }, { status: 400 })
   }
 
   const { model, maxTokens } = getAiConfig(db, 'order_import')

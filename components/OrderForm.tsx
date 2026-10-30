@@ -59,6 +59,13 @@ export default function OrderForm({ supplierId, products, order, onSaved, onCanc
   const [saving, setSaving] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const sortedProducts = [...products].sort((a, b) => a.name.localeCompare(b.name, 'nl'))
+  // Products that exist in WooCommerce but are not published (e.g. disabled variations)
+  const [unpublished, setUnpublished] = useState<ProductOption[]>([])
+  useEffect(() => {
+    apiFetch(`/api/products?unpublished_for=${supplierId}`).then(r => r.json())
+      .then(data => setUnpublished(Array.isArray(data) ? data : []))
+      .catch(() => setUnpublished([]))
+  }, [supplierId])
 
   async function analyze(raw: File) {
     setMessage(null)
@@ -263,6 +270,13 @@ export default function OrderForm({ supplierId, products, order, onSaved, onCanc
                   {sortedProducts.map(p => (
                     <option key={p.productId} value={p.productId}>{p.sku} — {p.name}</option>
                   ))}
+                  {unpublished.length > 0 && (
+                    <optgroup label="Niet gepubliceerd in WooCommerce">
+                      {unpublished.map(p => (
+                        <option key={p.productId} value={p.productId}>{p.sku} — {p.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
                 <input
                   type="number"

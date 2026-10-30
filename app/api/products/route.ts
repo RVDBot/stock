@@ -3,6 +3,7 @@ import { requireAuth } from '@/lib/auth-guard'
 import { getDb } from '@/lib/db'
 import { getAllProductStatuses, getProductStatusesBySupplier } from '@/lib/stock-status'
 import { isPositiveInt, isIntArray, isInt } from '@/lib/validate'
+import { getUnpublishedProducts } from '@/lib/orders'
 
 export async function GET(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
@@ -46,6 +47,15 @@ export async function GET(req: NextRequest) {
     const db = getDb()
     const products = db.prepare('SELECT id as productId, sku, name, supplier_id as supplierId FROM products WHERE active = 0 AND archived = 0 ORDER BY name').all()
     return NextResponse.json(products)
+  }
+
+  // Unpublished products an order for this supplier can be linked to
+  const unpublishedFor = req.nextUrl.searchParams.get('unpublished_for')
+  if (unpublishedFor) {
+    const parsed = parseInt(unpublishedFor, 10)
+    if (!isPositiveInt(parsed)) return NextResponse.json({ error: 'Ongeldig supplier_id' }, { status: 400 })
+    const rows = getUnpublishedProducts(getDb(), parsed).map(p => ({ productId: p.id, sku: p.sku, name: p.name }))
+    return NextResponse.json(rows)
   }
 
   // Return archived products (no longer published in WooCommerce)

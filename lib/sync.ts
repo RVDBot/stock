@@ -1,3 +1,4 @@
+import type Database from 'better-sqlite3'
 import { getDb } from '@/lib/db'
 import { fetchAllProducts, fetchOrders, splitCompositeSku, getWooCredentials } from '@/lib/woocommerce'
 import { log } from '@/lib/logger'
@@ -17,6 +18,7 @@ export async function syncProducts() {
   const allProducts = await fetchAllProducts()
   // Only published products belong in the dashboard; drafts, private, pending etc. get archived
   const products = allProducts.filter(p => p.status === 'publish')
+  const unpublished = allProducts.filter(p => p.status !== 'publish')
   const today = new Date().toISOString().slice(0, 10)
 
   const upsertProduct = db.prepare(`
@@ -171,10 +173,41 @@ export async function syncProducts() {
         log('info', `Sync: ${toArchive.length} producten gearchiveerd (niet meer gepubliceerd in WooCommerce): ${toArchive.map(r => r.sku).join(', ')}`)
       }
     }
+
+    const added = storeUnpublishedProducts(db, unpublished, new Set(skuMap.keys()))
+    if (added.length > 0) {
+      log('info', `Sync: ${added.length} niet-gepubliceerde producten opgeslagen (gearchiveerd, kiesbaar bij bestellingen): ${added.join(', ')}`)
+    }
   })()
 
   log('info', `Sync: ${synced} producten bijgewerkt`)
   return synced
+}
+
+// Unpublished products (e.g. disabled variations) are kept archived so orders can already be
+// matched to them; publishing them later un-archives the same row. Live SKUs are never touched.
+export function storeUnpublishedProducts(
+  db: Database.Database,
+  unpublished: { id: number; sku: string; name: string }[],
+  liveSkus: Set<string>,
+): string[] {
+  const exists = db.prepare('SELECT 1 FROM products WHERE sku = ?')
+  const insert = db.prepare('INSERT INTO products (woo_product_id, sku, name, archived) VALUES (?, ?, ?, 1)')
+  const rename = db.prepare('UPDATE products SET name = ? WHERE sku = ? AND archived = 1')
+  const added: string[] = []
+  const seen = new Set<string>()
+  for (const p of unpublished) {
+    // Composite SKUs are bundles; their parts are handled by the published sync
+    if (!p.sku || p.sku.includes('+') || liveSkus.has(p.sku) || seen.has(p.sku)) continue
+    seen.add(p.sku)
+    if (exists.get(p.sku)) {
+      rename.run(p.name, p.sku)
+    } else {
+      insert.run(p.id, p.sku, p.name)
+      added.push(p.sku)
+    }
+  }
+  return added
 }
 
 export async function syncRecentOrders() {

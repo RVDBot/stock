@@ -29,14 +29,27 @@ export function listOrders(db: Database.Database, supplierId: number, filter: 'o
   return orders.map(o => ({ ...o, lines: linesStmt.all(o.id) as OrderLine[] }))
 }
 
+// Products not published in WooCommerce yet that an order line may point to: this supplier's, plus
+// those no supplier has claimed yet (saving an order with one assigns it to this supplier)
+export function getUnpublishedProducts(db: Database.Database, supplierId: number): { id: number; sku: string; name: string }[] {
+  return db.prepare(`
+    SELECT id, sku, name FROM products
+    WHERE archived = 1 AND active = 1 AND (supplier_id = ? OR supplier_id IS NULL)
+    ORDER BY name
+  `).all(supplierId) as { id: number; sku: string; name: string }[]
+}
+
 function insertLines(db: Database.Database, orderId: number, input: OrderInput) {
   // order_date is still NOT NULL on the legacy line columns; status/arrival live on the order
   const insert = db.prepare(`
     INSERT INTO purchase_orders (order_id, supplier_id, product_id, quantity, order_date, supplier_code, supplier_description)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `)
+  const assignSupplier = db.prepare('UPDATE products SET supplier_id = ? WHERE id = ? AND supplier_id IS NULL')
   for (const line of input.lines) {
     insert.run(orderId, input.supplier_id, line.product_id, line.quantity, input.order_date, line.supplier_code || null, line.supplier_description || null)
+    // A product picked here without a supplier (e.g. a new unpublished variant) belongs to this one
+    if (line.product_id !== null) assignSupplier.run(input.supplier_id, line.product_id)
     if (line.remember && line.product_id !== null) upsertAlias(db, input.supplier_id, line.product_id, line.supplier_code, line.supplier_description)
   }
 }
