@@ -8,7 +8,10 @@ export function middleware(req: NextRequest) {
     pathname.startsWith('/api/auth') ||
     pathname.startsWith('/api/cron') ||
     pathname.startsWith('/_next') ||
-    pathname.startsWith('/favicon')
+    pathname.startsWith('/favicon') ||
+    // Icons must load on the login page too
+    pathname === '/icon.svg' ||
+    pathname === '/apple-icon.png'
   ) {
     return NextResponse.next()
   }
