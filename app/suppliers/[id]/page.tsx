@@ -344,11 +344,16 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
   async function handleSave() {
     setSaving(true)
     try {
-      await apiFetch('/api/suppliers', {
+      const res = await apiFetch('/api/suppliers', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: parseInt(id, 10), ...form }),
       })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        alert(data.error || 'Opslaan mislukt')
+        return
+      }
       setEditing(false)
       loadData()
     } finally {
@@ -358,11 +363,16 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
 
   async function handleDelete() {
     if (!confirm('Weet je zeker dat je deze fabrikant wilt verwijderen? Producten worden losgekoppeld.')) return
-    await apiFetch('/api/suppliers', {
+    const res = await apiFetch('/api/suppliers', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: parseInt(id, 10) }),
     })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      alert(data.error || 'Verwijderen mislukt')
+      return
+    }
     window.location.href = '/suppliers'
   }
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getDb } from '@/lib/db'
+import { getDb, SESSION_TTL_MS } from '@/lib/db'
 import { hashPassword, verifyPassword, isPasswordSet, createSession, validateSession, clearSession } from '@/lib/auth'
 
 const LOGIN_WINDOW_MS = 60_000
@@ -24,7 +24,7 @@ function getSessionCookieOptions(req: NextRequest) {
     sameSite: 'lax' as const,
     path: '/',
     secure: isSecure,
-    maxAge: 60 * 60 * 24 * 30,
+    maxAge: SESSION_TTL_MS / 1000,
   }
 }
 
@@ -41,7 +41,8 @@ export async function POST(req: NextRequest) {
   const { action, password } = body
 
   if (action === 'logout') {
-    clearSession()
+    // Only the logged-in browser may end the session; anyone else just gets their own cookie cleared
+    if (validateSession(req.cookies.get('session')?.value || '')) clearSession()
     const res = NextResponse.json({ ok: true })
     res.cookies.set('session', '', { path: '/', maxAge: 0 })
     return res

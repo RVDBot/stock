@@ -56,13 +56,16 @@ export async function PUT(req: NextRequest) {
   if (!isPositiveInt(id)) {
     return NextResponse.json({ error: 'id is verplicht' }, { status: 400 })
   }
+  if (!isNonEmptyString(name)) {
+    return NextResponse.json({ error: 'name is verplicht' }, { status: 400 })
+  }
 
   const db = getDb()
   const result = db.prepare(
     'UPDATE events SET parent_id = ?, name = ?, expected_date = ?, duration_days = ?, impact_percentage = ?, recurring = ?, ai_lookup = ?, ai_skip_months = ?, notes = ? WHERE id = ?'
   ).run(
     isPositiveInt(parent_id) ? parent_id : null,
-    isNonEmptyString(name) ? String(name).slice(0, 200) : '',
+    name.slice(0, 200),
     isDateStringOrNull(expected_date) ? expected_date : null,
     clampInt(duration_days, 1, 365, 7),
     clampInt(impact_percentage, -100, 1000, 100),

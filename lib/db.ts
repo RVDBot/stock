@@ -11,6 +11,8 @@ if (!fs.existsSync(dir)) {
   fs.mkdirSync(dir, { recursive: true })
 }
 
+export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
+
 let _db: Database.Database | null = null
 
 export function getDb(): Database.Database {
@@ -270,6 +272,24 @@ export function initSchema(db: Database.Database) {
       }
     })()
   }
+
+  // WooCommerce orders already counted in sales_history, so overlapping syncs never count one twice
+  const hadProcessedOrders = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'processed_orders'").get()
+  if (!hadProcessedOrders) {
+    db.exec(`
+      CREATE TABLE processed_orders (
+        woo_order_id INTEGER PRIMARY KEY,
+        processed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `)
+    // Before this table existed every sync counted all orders up to its own run
+    db.prepare(`INSERT OR IGNORE INTO settings (key, value)
+      SELECT 'orders_counted_until', value FROM settings WHERE key = 'last_sync_at' AND value != ''`).run()
+  }
+
+  // Sessions expire server-side; give a session from before expiry existed the full term
+  db.prepare(`INSERT OR IGNORE INTO settings (key, value)
+    SELECT 'auth_session_expires', ? FROM settings WHERE key = 'auth_session_token'`).run(String(Date.now() + SESSION_TTL_MS))
 
   // AI settings per function: old event-lookup max tokens (was never applied; web search needs ≥1024)
   const oldMax = db.prepare("SELECT value FROM settings WHERE key = 'ai_max_tokens_per_lookup'").get() as { value: string } | undefined

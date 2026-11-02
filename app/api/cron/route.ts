@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { runDailySync } from '@/lib/sync'
+import { runDailySync, SyncBusyError } from '@/lib/sync'
 
 export async function POST(req: NextRequest) {
   const expected = process.env.CRON_SECRET
@@ -13,6 +13,11 @@ export async function POST(req: NextRequest) {
   if (!match) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  await runDailySync('automated')
+  try {
+    await runDailySync('automated')
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return NextResponse.json({ error: msg }, { status: e instanceof SyncBusyError ? 409 : 500 })
+  }
   return NextResponse.json({ ok: true })
 }

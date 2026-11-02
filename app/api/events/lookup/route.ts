@@ -3,6 +3,7 @@ import { requireAuth } from '@/lib/auth-guard'
 import { getDb } from '@/lib/db'
 import Anthropic from '@anthropic-ai/sdk'
 import { log } from '@/lib/logger'
+import { isPositiveInt } from '@/lib/validate'
 import { getAiConfig, getClaudeApiKey, checkTokenCap, addTokenUsage, checkRateLimit } from '@/lib/ai'
 
 export async function POST(req: NextRequest) {
@@ -14,7 +15,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { id } = await req.json()
-  if (!id) {
+  if (!isPositiveInt(id)) {
     return NextResponse.json({ error: 'id is verplicht' }, { status: 400 })
   }
 

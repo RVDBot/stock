@@ -272,7 +272,7 @@ export default function SettingsPage() {
   }
 
   async function runHistoricalSync() {
-    if (!confirm('Dit kan lang duren — 3 jaar aan orders worden geimporteerd. Doorgaan?')) return
+    if (!confirm('Dit kan lang duren — de verkoophistorie van de afgelopen 3 jaar wordt opnieuw opgebouwd uit WooCommerce. Doorgaan?')) return
     setHistoricalSyncing(true)
     setSyncMsg('')
     try {
@@ -690,7 +690,7 @@ export default function SettingsPage() {
                 </p>
               )}
               <p className="text-warning text-[12px] mt-2">
-                Historische import kan lang duren — 3 jaar aan orders worden geimporteerd.
+                Historische import kan lang duren — de verkoophistorie van de afgelopen 3 jaar wordt opnieuw opgebouwd uit WooCommerce.
               </p>
             </div>
           </div>

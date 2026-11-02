@@ -23,9 +23,10 @@ interface WooVariation {
   attributes: { name: string; option: string }[]
 }
 
-interface WooOrder {
+export interface WooOrder {
   id: number
   date_created: string
+  date_created_gmt?: string
   line_items: {
     product_id: number
     sku: string
@@ -44,6 +45,31 @@ export function getWooCredentials(): { url: string; key: string; secret: string 
   return { url, key, secret }
 }
 
+const MAX_ATTEMPTS = 3
+
+const backoff = (attempt: number) => new Promise(r => setTimeout(r, 1000 * attempt))
+
+// Retries network errors, rate limits and server errors, so one hiccup doesn't drop a page
+async function fetchPage<T>(pageUrl: string, key: string, secret: string): Promise<T[]> {
+  for (let attempt = 1; ; attempt++) {
+    let res: Response
+    try {
+      res = await fetch(pageUrl, {
+        headers: { 'Authorization': 'Basic ' + Buffer.from(`${key}:${secret}`).toString('base64') },
+      })
+    } catch (e) {
+      if (attempt >= MAX_ATTEMPTS) throw new Error(`WooCommerce niet bereikbaar: ${e instanceof Error ? e.message : String(e)}`)
+      await backoff(attempt)
+      continue
+    }
+    if (res.ok) return await res.json() as T[]
+    const error = `WooCommerce API fout (${res.status}): ${await res.text()}`
+    const retryable = res.status === 429 || res.status >= 500
+    if (!retryable || attempt >= MAX_ATTEMPTS) throw new Error(error)
+    await backoff(attempt)
+  }
+}
+
 async function wooFetch<T>(endpoint: string, params: Record<string, string> = {}): Promise<T[]> {
   const { url, key, secret } = getWooCredentials()
   const allResults: T[] = []
@@ -52,19 +78,7 @@ async function wooFetch<T>(endpoint: string, params: Record<string, string> = {}
 
   while (true) {
     const searchParams = new URLSearchParams({ per_page: String(perPage), page: String(page), ...params })
-    const res = await fetch(
-      `${url}/wp-json/wc/v3/${endpoint}?${searchParams}`,
-      {
-        headers: {
-          'Authorization': 'Basic ' + Buffer.from(`${key}:${secret}`).toString('base64'),
-        },
-      }
-    )
-    if (!res.ok) {
-      const err = await res.text()
-      throw new Error(`WooCommerce API fout (${res.status}): ${err}`)
-    }
-    const data = await res.json() as T[]
+    const data = await fetchPage<T>(`${url}/wp-json/wc/v3/${endpoint}?${searchParams}`, key, secret)
     allResults.push(...data)
     if (data.length < perPage) break
     page++

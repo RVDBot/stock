@@ -57,13 +57,16 @@ export async function PUT(req: NextRequest) {
   if (!isPositiveInt(id)) {
     return NextResponse.json({ error: 'id is verplicht' }, { status: 400 })
   }
+  if (!isNonEmptyString(name) || !isPositiveInt(lead_time_days)) {
+    return NextResponse.json({ error: 'Naam en levertijd (minimaal 1 dag) zijn verplicht' }, { status: 400 })
+  }
 
   const db = getDb()
   const result = db.prepare(
     'UPDATE suppliers SET name = ?, lead_time_days = ?, order_cycle_days = ?, inspection = ?, contact_name = ?, contact_email = ?, phone = ?, preferred_contact = ?, contact_info = ?, notes = ? WHERE id = ?'
   ).run(
-    String(name).slice(0, 200),
-    isPositiveInt(lead_time_days) ? lead_time_days : 1,
+    name.slice(0, 200),
+    lead_time_days,
     isPositiveInt(order_cycle_days) ? order_cycle_days : 30,
     ['never', 'always', 'random'].includes(inspection) ? inspection : 'never',
     isStringOrNull(contact_name) ? (contact_name || null) : null,
@@ -92,9 +95,21 @@ export async function DELETE(req: NextRequest) {
   }
 
   const db = getDb()
-  const result = db.prepare('DELETE FROM suppliers WHERE id = ?').run(id)
+  const orders = db.prepare(`
+    SELECT (SELECT COUNT(*) FROM orders WHERE supplier_id = ?) + (SELECT COUNT(*) FROM purchase_orders WHERE supplier_id = ?) AS n
+  `).get(id, id) as { n: number }
+  if (orders.n > 0) {
+    return NextResponse.json({ error: 'Deze fabrikant heeft bestellingen en kan daarom niet verwijderd worden. Verwijder eerst de bestellingen.' }, { status: 409 })
+  }
 
-  if (result.changes === 0) {
+  const deleted = db.transaction(() => {
+    // Templates go with the supplier (cascade), so products must let go of them and of the supplier first
+    db.prepare('UPDATE products SET spec_template_id = NULL WHERE spec_template_id IN (SELECT id FROM spec_templates WHERE supplier_id = ?)').run(id)
+    db.prepare('UPDATE products SET supplier_id = NULL WHERE supplier_id = ?').run(id)
+    return db.prepare('DELETE FROM suppliers WHERE id = ?').run(id).changes > 0
+  })()
+
+  if (!deleted) {
     return NextResponse.json({ error: 'Supplier niet gevonden' }, { status: 404 })
   }
 

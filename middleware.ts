@@ -3,6 +3,22 @@ import { NextRequest, NextResponse } from 'next/server'
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
 
+  // CSRF protection, also for the public routes (login, logout): reject state-changing requests from another origin
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    const origin = req.headers.get('origin')
+    const host = req.headers.get('host')
+    if (origin && host) {
+      try {
+        const originHost = new URL(origin).host
+        if (originHost !== host) {
+          return NextResponse.json({ error: 'CSRF rejected' }, { status: 403 })
+        }
+      } catch {
+        return NextResponse.json({ error: 'CSRF rejected' }, { status: 403 })
+      }
+    }
+  }
+
   if (
     pathname.startsWith('/login') ||
     pathname.startsWith('/api/auth') ||
@@ -22,22 +38,6 @@ export function middleware(req: NextRequest) {
       return NextResponse.json({ error: 'Niet ingelogd' }, { status: 401 })
     }
     return NextResponse.redirect(new URL('/login', req.url))
-  }
-
-  // Add CSRF protection: reject state-changing requests without matching Origin
-  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
-    const origin = req.headers.get('origin')
-    const host = req.headers.get('host')
-    if (origin && host) {
-      try {
-        const originHost = new URL(origin).host
-        if (originHost !== host) {
-          return NextResponse.json({ error: 'CSRF rejected' }, { status: 403 })
-        }
-      } catch {
-        return NextResponse.json({ error: 'CSRF rejected' }, { status: 403 })
-      }
-    }
   }
 
   return NextResponse.next()

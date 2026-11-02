@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth-guard'
 import { getDb } from '@/lib/db'
+import { isNonEmptyString, isPositiveInt } from '@/lib/validate'
+
+const FIELD_TYPES = ['text', 'number', 'select', 'fixed', 'price']
+
+function isTemplateFields(v: unknown): boolean {
+  return Array.isArray(v) && v.length <= 100 && v.every(f =>
+    f && typeof f === 'object' && isNonEmptyString(f.name) && FIELD_TYPES.includes(f.type))
+}
 
 export async function GET(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
@@ -20,15 +28,21 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
 
-  const { supplier_id, name, fields } = await req.json()
-  if (!supplier_id || !name) {
+  const { supplier_id, name, fields = [] } = await req.json()
+  if (!isPositiveInt(supplier_id) || !isNonEmptyString(name)) {
     return NextResponse.json({ error: 'supplier_id en name zijn verplicht' }, { status: 400 })
+  }
+  if (!isTemplateFields(fields)) {
+    return NextResponse.json({ error: 'Ongeldige velden' }, { status: 400 })
   }
 
   const db = getDb()
+  if (!db.prepare('SELECT 1 FROM suppliers WHERE id = ?').get(supplier_id)) {
+    return NextResponse.json({ error: 'Fabrikant niet gevonden' }, { status: 400 })
+  }
   const result = db.prepare(
     'INSERT INTO spec_templates (supplier_id, name, fields) VALUES (?, ?, ?)'
-  ).run(supplier_id, name, JSON.stringify(fields || []))
+  ).run(supplier_id, name.slice(0, 200), JSON.stringify(fields))
 
   return NextResponse.json({ id: result.lastInsertRowid }, { status: 201 })
 }
@@ -36,15 +50,18 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
 
-  const { id, name, fields } = await req.json()
-  if (!id) {
+  const { id, name, fields = [] } = await req.json()
+  if (!isPositiveInt(id)) {
     return NextResponse.json({ error: 'id is verplicht' }, { status: 400 })
+  }
+  if (!isNonEmptyString(name) || !isTemplateFields(fields)) {
+    return NextResponse.json({ error: 'Naam en geldige velden zijn verplicht' }, { status: 400 })
   }
 
   const db = getDb()
   const result = db.prepare(
     'UPDATE spec_templates SET name = ?, fields = ? WHERE id = ?'
-  ).run(name, JSON.stringify(fields || []), id)
+  ).run(name.slice(0, 200), JSON.stringify(fields), id)
 
   if (result.changes === 0) {
     return NextResponse.json({ error: 'Template niet gevonden' }, { status: 404 })
@@ -57,7 +74,7 @@ export async function DELETE(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
 
   const { id } = await req.json()
-  if (!id) {
+  if (!isPositiveInt(id)) {
     return NextResponse.json({ error: 'id is verplicht' }, { status: 400 })
   }
 

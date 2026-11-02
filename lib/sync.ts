@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 import { getDb } from '@/lib/db'
-import { fetchAllProducts, fetchOrders, splitCompositeSku, getWooCredentials } from '@/lib/woocommerce'
+import { fetchAllProducts, fetchOrders, splitCompositeSku, type WooOrder } from '@/lib/woocommerce'
 import { log } from '@/lib/logger'
 
 function getSetting(key: string): string {
@@ -217,89 +217,81 @@ export function storeUnpublishedProducts(
   return added
 }
 
+// Overlapping windows are safe (each order is counted once), so look back a week to catch up on missed syncs
+const RECENT_ORDER_DAYS = 7
+const HISTORY_YEARS = 3
+
 export async function syncRecentOrders() {
   const db = getDb()
-  const yesterday = new Date(Date.now() - 86400000).toISOString()
-  const orders = await fetchOrders(yesterday)
-  return processOrders(db, orders)
+  const since = new Date(Date.now() - RECENT_ORDER_DAYS * 86400000).toISOString()
+  const orders = await fetchOrders(since)
+  const result = processOrders(db, orders)
+  log('info', `Orders: ${result.lines} verkoopregels verwerkt uit ${result.counted} nieuwe orders (${orders.length} opgehaald)`)
+  return result.lines
 }
 
-interface WooOrderForProcessing {
-  id: number
-  date_created: string
-  line_items: { product_id: number; sku: string; quantity: number }[]
-}
+const orderTime = (o: WooOrder) =>
+  o.date_created_gmt ? Date.parse(o.date_created_gmt + 'Z') : Date.parse(o.date_created)
 
-function processOrders(db: ReturnType<typeof getDb>, orders: WooOrderForProcessing[]) {
+// Adds each order's lines to sales_history once; orders seen before are skipped
+export function processOrders(db: Database.Database, orders: WooOrder[]): { counted: number; lines: number } {
   const upsertSales = db.prepare(`
     INSERT INTO sales_history (product_id, date, quantity)
     VALUES (?, ?, ?)
     ON CONFLICT(product_id, date) DO UPDATE SET quantity = quantity + ?
   `)
+  const markProcessed = db.prepare('INSERT OR IGNORE INTO processed_orders (woo_order_id) VALUES (?)')
+  const findProduct = db.prepare('SELECT id FROM products WHERE sku = ?')
+  const findLiveProduct = db.prepare('SELECT id FROM products WHERE sku = ? AND archived = 0')
+  // Syncs from before order tracking counted every order up to their own run
+  const countedUntilRow = db.prepare("SELECT value FROM settings WHERE key = 'orders_counted_until'").get() as { value: string } | undefined
+  const countedUntil = countedUntilRow ? Date.parse(countedUntilRow.value) : NaN
 
-  let processed = 0
+  let counted = 0
+  let lines = 0
   db.transaction(() => {
     for (const order of orders) {
+      if (markProcessed.run(order.id).changes === 0) continue
+      if (orderTime(order) <= countedUntil) continue
+      counted++
       const date = order.date_created.slice(0, 10)
       for (const item of order.line_items) {
-        const skus = splitCompositeSku(item.sku || '')
-        for (const sku of skus) {
-          const product = db.prepare('SELECT id FROM products WHERE sku = ?').get(sku) as { id: number } | undefined
-          if (!product) continue
-          upsertSales.run(product.id, date, item.quantity, item.quantity)
-          processed++
+        const sku = item.sku || ''
+        // A bundle none of whose parts is sold separately is tracked under its own SKU
+        const bundle = sku.includes('+') ? findLiveProduct.get(sku) as { id: number } | undefined : undefined
+        const productIds = bundle
+          ? [bundle.id]
+          : splitCompositeSku(sku).map(s => (findProduct.get(s) as { id: number } | undefined)?.id).filter((id): id is number => id !== undefined)
+        for (const productId of productIds) {
+          upsertSales.run(productId, date, item.quantity, item.quantity)
+          lines++
         }
       }
     }
   })()
-
-  log('info', `Orders: ${processed} verkoopregels verwerkt uit ${orders.length} orders`)
-  return processed
+  return { counted, lines }
 }
 
-export async function importHistoricalOrders(onProgress?: (pct: number, msg: string) => void) {
+// Replaces the sales history from `sinceDate` on with exactly these orders; also undoes earlier double counting
+export function rebuildSalesHistory(db: Database.Database, orders: WooOrder[], sinceDate: string) {
+  return db.transaction(() => {
+    db.prepare('DELETE FROM sales_history WHERE date >= ?').run(sinceDate)
+    db.prepare('DELETE FROM processed_orders').run()
+    db.prepare("DELETE FROM settings WHERE key = 'orders_counted_until'").run()
+    return processOrders(db, orders)
+  })()
+}
+
+export async function importHistoricalOrders() {
   const db = getDb()
-  const { url, key, secret } = getWooCredentials()
-  const threeYearsAgo = new Date()
-  threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3)
-
-  let page = 1
-  const perPage = 100
-  const allOrders: WooOrderForProcessing[] = []
-
-  const firstParams = new URLSearchParams({
-    per_page: String(perPage), page: '1',
-    status: 'completed,processing', after: threeYearsAgo.toISOString(),
-  })
-  const firstRes = await fetch(`${url}/wp-json/wc/v3/orders?${firstParams}`, {
-    headers: { 'Authorization': 'Basic ' + Buffer.from(`${key}:${secret}`).toString('base64') },
-  })
-  if (!firstRes.ok) throw new Error(`WooCommerce API fout: ${firstRes.status}`)
-  const totalPages = parseInt(firstRes.headers.get('x-wp-totalpages') || '1', 10)
-  const firstData = await firstRes.json()
-  allOrders.push(...firstData)
-  if (onProgress) onProgress(Math.round((1 / totalPages) * 100), `Pagina 1/${totalPages}`)
-
-  for (page = 2; page <= totalPages; page++) {
-    await new Promise(r => setTimeout(r, 200))
-    const params = new URLSearchParams({
-      per_page: String(perPage), page: String(page),
-      status: 'completed,processing', after: threeYearsAgo.toISOString(),
-    })
-    const res = await fetch(`${url}/wp-json/wc/v3/orders?${params}`, {
-      headers: { 'Authorization': 'Basic ' + Buffer.from(`${key}:${secret}`).toString('base64') },
-    })
-    if (!res.ok) {
-      log('warn', `Historische import: pagina ${page} mislukt (${res.status}), doorgaan...`)
-      continue
-    }
-    const data = await res.json()
-    allOrders.push(...data)
-    if (onProgress) onProgress(Math.round((page / totalPages) * 100), `Pagina ${page}/${totalPages}`)
-  }
-
-  log('info', `Historische import: ${allOrders.length} orders opgehaald uit ${totalPages} pagina's`)
-  return processOrders(db, allOrders)
+  const since = new Date()
+  since.setFullYear(since.getFullYear() - HISTORY_YEARS)
+  const sinceDate = since.toISOString().slice(0, 10)
+  // Woo compares `after` in shop time, like date_created, so whole days line up with the delete
+  const orders = await fetchOrders(`${sinceDate}T00:00:00`)
+  const result = rebuildSalesHistory(db, orders, sinceDate)
+  log('info', `Historische import: verkoophistorie vanaf ${sinceDate} opnieuw opgebouwd uit ${result.counted} orders (${result.lines} verkoopregels)`)
+  return result.lines
 }
 
 export interface PeakWeek {
@@ -334,19 +326,48 @@ export function analyzeHistoricalPeaks(): PeakWeek[] {
     .sort((a, b) => b.ratio - a.ratio)
 }
 
-export async function runDailySync(type: 'manual' | 'automated' = 'manual') {
+export class SyncBusyError extends Error {}
+
+// globalThis: the scheduler and the route handlers load separate copies of this module
+const syncState = globalThis as { __stockSyncRunning?: boolean }
+
+async function exclusive<T>(fn: () => Promise<T>): Promise<T> {
+  if (syncState.__stockSyncRunning) throw new SyncBusyError('Er loopt al een sync, probeer het over een paar minuten opnieuw')
+  syncState.__stockSyncRunning = true
+  try {
+    return await fn()
+  } finally {
+    syncState.__stockSyncRunning = false
+  }
+}
+
+async function trackSync<T>(type: string, fn: () => Promise<T>): Promise<T> {
   try {
     setSetting('last_sync_status', 'running')
     setSetting('last_sync_type', type)
-    await syncProducts()
-    await syncRecentOrders()
+    const result = await fn()
     setSetting('last_sync_at', new Date().toISOString())
     setSetting('last_sync_status', 'success')
-    log('info', `Sync voltooid (${type})`)
+    return result
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     setSetting('last_sync_status', `error: ${msg}`)
-    log('error', `Sync fout: ${msg}`)
+    log('error', `Sync fout (${type}): ${msg}`)
     throw e
   }
+}
+
+export function runDailySync(type: 'manual' | 'automated' = 'manual') {
+  return exclusive(() => trackSync(type, async () => {
+    await syncProducts()
+    await syncRecentOrders()
+    log('info', `Sync voltooid (${type})`)
+  }))
+}
+
+export function runHistoricalImport() {
+  return exclusive(() => trackSync('historical', async () => {
+    const ordersProcessed = await importHistoricalOrders()
+    return { ordersProcessed, peaks: analyzeHistoricalPeaks() }
+  }))
 }

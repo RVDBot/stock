@@ -162,6 +162,9 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ success: true })
   }
 
+  if (body.supplier_id !== null && !isPositiveInt(body.supplier_id)) {
+    return NextResponse.json({ error: 'Ongeldig supplier_id' }, { status: 400 })
+  }
   const result = db.prepare('UPDATE products SET supplier_id = ? WHERE id = ?').run(body.supplier_id, body.id)
 
   if (result.changes === 0) {
